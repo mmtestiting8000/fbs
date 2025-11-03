@@ -8,6 +8,13 @@ const { MongoClient } = require('mongodb');
 const path = require('path');
 
 const app = express();
+
+// --- LOGS de todas las peticiones ---
+app.use((req, res, next) => {
+  console.log(`➡️ ${req.method} ${req.url}`);
+  next();
+});
+
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -19,24 +26,29 @@ const DEFAULT_APIFY_TOKEN = process.env.DEFAULT_APIFY_TOKEN || '';
 let dbClient;
 let commentsCollection;
 
+// === CONEXIÓN A MONGO ===
 async function startDb() {
-  dbClient = new MongoClient(MONGO_URI);
-  await dbClient.connect();
-  const db = dbClient.db(); // usa nombre de DB del URI o por defecto
-  commentsCollection = db.collection('comments');
-  // Opcional: crear índices
-  await commentsCollection.createIndex({ apifyRunId: 1 });
+  try {
+    dbClient = new MongoClient(MONGO_URI);
+    await dbClient.connect();
+    const db = dbClient.db(); // usa nombre de DB del URI o por defecto
+    commentsCollection = db.collection('comments');
+    await commentsCollection.createIndex({ apifyRunId: 1 });
+    console.log('✅ Conectado a MongoDB');
+  } catch (err) {
+    console.error('❌ Error conectando a MongoDB:', err.message);
+    process.exit(1);
+  }
 }
-startDb().catch(err => {
-  console.error('Error conectando a Mongo:', err);
-  process.exit(1);
-});
+startDb();
 
-// Helper: lanzar actor en Apify
+// === HELPERS ===
 async function startApifyRun(apifyToken, fbUrl, limit) {
   const runUrl = `https://api.apify.com/v2/acts/easyapi~facebook-post-comments-scraper/runs?token=${apifyToken}`;
   const actorInput = { postUrls: [fbUrl] };
   if (limit) actorInput.maxComments = parseInt(limit, 10);
+
+  console.log('🚀 Lanzando actor Apify con payload:', actorInput);
 
   const res = await axios.post(runUrl, actorInput, {
     headers: { 'Content-Type': 'application/json' },
@@ -44,60 +56,58 @@ async function startApifyRun(apifyToken, fbUrl, limit) {
   });
 
   if (res.status !== 201) {
-    const errMsg = res.data && res.data.error && res.data.error.message ? res.data.error.message : res.data || res.statusText;
-    const e = new Error('Error al iniciar actor Apify: ' + errMsg);
-    e.status = res.status;
-    throw e;
+    const errMsg = res.data?.error?.message || res.data || res.statusText;
+    throw new Error(`Error al iniciar actor Apify: ${errMsg}`);
   }
+
+  console.log('✅ Actor iniciado. Run ID:', res.data.data.id);
   return res.data.data.id;
 }
 
-// Helper: esperar a que termine la ejecución y devolver datasetId
 async function waitForRunToFinish(apifyToken, runId, onProgress) {
   const statusUrl = `https://api.apify.com/v2/actor-runs/${runId}?token=${apifyToken}`;
   while (true) {
     const res = await axios.get(statusUrl);
     const data = res.data;
-    const status = data.data && data.data.status;
+    const status = data.data?.status;
     if (onProgress) onProgress(status, data);
+    console.log('⏳ Estado del run:', status);
     if (status === 'SUCCEEDED') {
+      console.log('✅ Ejecución Apify completada.');
       return data.data.defaultDatasetId;
     } else if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(status)) {
-      throw new Error('La ejecución falló en Apify: ' + status);
+      throw new Error(`❌ La ejecución falló en Apify: ${status}`);
     }
-    // Espera 5s
     await new Promise(r => setTimeout(r, 5000));
   }
 }
 
-// Helper: obtener items desde dataset
 async function fetchCommentsFromDataset(apifyToken, datasetId) {
   const datasetUrl = `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apifyToken}&clean=true`;
+  console.log('📦 Descargando dataset:', datasetId);
   const res = await axios.get(datasetUrl);
-  return res.data; // array
+  return res.data;
 }
 
-// Endpoint: iniciar extracción y guardar en Mongo
+// === ENDPOINT PRINCIPAL ===
 app.post('/api/scrape', async (req, res) => {
+  console.log('📥 Body recibido:', req.body);
+
   const { fbUrl, limit, apifyToken: tokenFromClient } = req.body;
   const apifyToken = tokenFromClient || DEFAULT_APIFY_TOKEN;
 
   if (!apifyToken) {
-    return res.status(400).json({ error: 'Falta token de Apify. Proveer apifyToken en el body o configurar DEFAULT_APIFY_TOKEN en el servidor.' });
+    return res.status(400).json({
+      error: 'Falta token de Apify. Proveer apifyToken en el body o configurar DEFAULT_APIFY_TOKEN en el servidor.'
+    });
   }
   if (!fbUrl) return res.status(400).json({ error: 'fbUrl requerido' });
 
   try {
     const runId = await startApifyRun(apifyToken, fbUrl, limit);
-    // Opcional: responder de inmediato con runId y luego procesar en background.
-    // Pero por requerimiento del user, procesamos y respondemos con resultado en esta misma petición (bloqueante).
-    const datasetId = await waitForRunToFinish(apifyToken, runId, (status) => {
-      // podríamos emitir logs
-      console.log('Apify run status:', status);
-    });
+    const datasetId = await waitForRunToFinish(apifyToken, runId);
 
     const comments = await fetchCommentsFromDataset(apifyToken, datasetId);
-    // Normalizar y guardar en Mongo
     const docs = comments.map(c => ({
       apifyRunId: runId,
       datasetId,
@@ -119,32 +129,45 @@ app.post('/api/scrape', async (req, res) => {
       ok: true,
       runId,
       datasetId,
-      imported: docs.length
+      imported: docs.length,
+      comments
     });
   } catch (err) {
-    console.error('Error en /api/scrape:', err);
-    res.status(500).json({ error: String(err.message || err) });
+    console.error('❌ ERROR en /api/scrape:', err);
+    res.status(500).json({ error: err.message || 'Error desconocido en /api/scrape' });
   }
 });
 
-// Endpoint: listar comentarios guardados (paginado simple)
+// === ENDPOINT para listar ===
 app.get('/api/comments', async (req, res) => {
   const limit = Math.min(100, parseInt(req.query.limit || '50', 10));
   const page = Math.max(0, parseInt(req.query.page || '0', 10));
   try {
-    const cursor = commentsCollection.find().sort({ fetchedAt: -1 }).skip(page * limit).limit(limit);
+    const cursor = commentsCollection
+      .find()
+      .sort({ fetchedAt: -1 })
+      .skip(page * limit)
+      .limit(limit);
     const items = await cursor.toArray();
     res.json({ ok: true, items });
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    console.error('❌ ERROR en /api/comments:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Fallback: servir frontend
+// === GLOBAL ERROR HANDLER ===
+app.use((err, req, res, next) => {
+  console.error('🔥 Error global no manejado:', err);
+  res.status(500).json({ error: 'Error interno del servidor: ' + (err.message || err) });
+});
+
+// === FRONTEND FALLBACK ===
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// === START SERVER ===
 app.listen(PORT, () => {
-  console.log(`Server listening on http://localhost:${PORT}`);
+  console.log(`🚀 Servidor escuchando en puerto ${PORT}`);
 });
