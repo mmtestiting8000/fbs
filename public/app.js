@@ -1,84 +1,102 @@
-// app.js
-$(function(){
-  function setStatus(txt, isError) {
-    $('#status').text(txt).css('color', isError ? 'crimson' : '');
+$(document).ready(function () {
+  const apiUrl = "/api";
+  const $status = $("#status");
+  const $tableBody = $("#commentsTable tbody");
+
+  // Función para mostrar estado
+  function setStatus(msg, type = "info") {
+    $status.removeClass().addClass("status " + type).text(msg);
   }
 
+  // Obtener comentarios guardados
   async function fetchComments() {
-    setStatus('Cargando comentarios...');
+    setStatus("Cargando comentarios...");
     try {
-      const res = await $.getJSON('/api/comments?limit=100');
-      const items = res.items || [];
-      const $b = $('#commentsTable tbody').empty();
-      items.forEach(it => {
-        const user = it.userId || '-';
-        const name = it.userName || '-';
-        const text = it.commentText ? $('<div>').text(it.commentText).html() : '-';
-        const tr = `<tr><td>${user}</td><td>${name}</td><td>${text}</td></tr>`;
-        $b.append(tr);
-      });
-      setStatus(`Cargados ${items.length} comentarios (mostrando hasta 100).`);
+      const res = await fetch(`${apiUrl}/comments`);
+      if (!res.ok) throw new Error("Error al obtener comentarios.");
+      const data = await res.json();
+      renderComments(data);
+      setStatus(`Se cargaron ${data.length} comentarios.`, "success");
     } catch (err) {
-      setStatus('Error cargando comentarios: ' + (err.responseJSON?.error || err.statusText || err), true);
+      setStatus("Error al cargar comentarios: " + err.message, "error");
     }
   }
 
-  $('#btnRefresh').on('click', fetchComments);
-  fetchComments();
+  // Renderizar tabla
+  function renderComments(comments) {
+    $tableBody.empty();
+    if (!comments.length) {
+      $tableBody.append(`<tr><td colspan="3">No hay comentarios almacenados.</td></tr>`);
+      return;
+    }
+    comments.forEach((c) => {
+      const text = c.message || "(sin texto)";
+      const user = c.author?.short_name || c.author?.name || "Anónimo";
+      const name = c.author?.name || "Desconocido";
+      $tableBody.append(`<tr>
+        <td>${user}</td>
+        <td>${name}</td>
+        <td>${text}</td>
+      </tr>`);
+    });
+  }
 
-  $('#btnScrape').on('click', async function(){
-    const fbUrl = $('#fbUrl').val().trim();
-    const limit = $('#limit').val().trim();
-    const apifyToken = $('#apifyToken').val().trim();
+  // Botón para obtener comentarios de un nuevo post
+  $("#btnScrape").click(async function () {
+    const fbUrl = $("#fbUrl").val().trim();
+    const apifyToken = $("#apifyToken").val().trim();
+    const limit = $("#limit").val().trim();
 
-    if (!fbUrl) { setStatus('Ingresa la URL de la publicación.', true); return; }
+    if (!fbUrl) {
+      setStatus("Por favor, ingresa la URL de la publicación.", "error");
+      return;
+    }
 
-    setStatus('Iniciando extracción en Apify, esto puede tardar varios segundos...');
+    setStatus("Ejecutando scraper en Apify... esto puede tardar unos segundos.", "loading");
 
     try {
-      const payload = { fbUrl, limit: limit || undefined, apifyToken: apifyToken || undefined };
-      // Bloquear UI
-      $('#btnScrape').prop('disabled', true).text('Obteniendo...');
-      const res = await $.ajax({
-        url: '/api/scrape',
-        method: 'POST',
-        contentType: 'application/json',
-        data: JSON.stringify(payload),
-        dataType: 'json',
-        timeout: 20 * 60 * 1000 // 20 min en caso de ejecuciones muy largas
+      const res = await fetch(`${apiUrl}/scrape`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: fbUrl,
+          limit: limit ? parseInt(limit) : undefined,
+          token: apifyToken || undefined
+        }),
       });
 
-      if (res.ok) {
-        setStatus(`Éxito: importados ${res.imported} comentarios (runId: ${res.runId})`);
-        fetchComments();
-      } else {
-        setStatus('Respuesta inesperada: ' + JSON.stringify(res), true);
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Error desconocido al ejecutar el scraper.");
       }
+
+      setStatus(`✅ Scraper ejecutado correctamente. Se guardaron ${data.count || 0} comentarios.`, "success");
+      fetchComments();
     } catch (err) {
-      const msg = err.responseJSON?.error || (err.statusText || err);
-      setStatus('Error: ' + msg, true);
-    } finally {
-      $('#btnScrape').prop('disabled', false).text('Obtener Comentarios');
+      console.error(err);
+      setStatus("Error: " + err.message, "error");
     }
   });
 
-  $('#btnExportCSV').on('click', function(){
-    // Exportar tabla a CSV simple (cliente)
+  // Botones auxiliares
+  $("#btnRefresh").click(fetchComments);
+
+  $("#btnExportCSV").click(function () {
     const rows = [];
-    $('#commentsTable tbody tr').each(function(){
-      const cols = $(this).find('td').map(function(){ return $(this).text().trim(); }).get();
-      rows.push(cols.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+    $("#commentsTable tr").each(function () {
+      const cols = $(this).find("td,th").map(function () {
+        return `"${$(this).text().replace(/"/g, '""')}"`;
+      }).get();
+      rows.push(cols.join(","));
     });
-    if (!rows.length) { setStatus('No hay datos para exportar.', true); return; }
-    const csv = ['Usuario,Nombre,Comentario', ...rows].join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'comments_export.csv';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
+    const link = document.createElement("a");
+    link.setAttribute("href", csvContent);
+    link.setAttribute("download", "comentarios.csv");
+    link.click();
   });
+
+  // Cargar datos al iniciar
+  fetchComments();
 });
