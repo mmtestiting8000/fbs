@@ -1,0 +1,51 @@
+/* app.css - estilo simple y amigable */
+:root {
+  --bg: #f7f9fc;
+  --card: #ffffff;
+  --accent: #007acc;
+  --accent-2: #28a745;
+  --muted: #6b7280;
+}
+
+*{box-sizing:border-box}
+body{
+  font-family: Inter, "Segoe UI", Roboto, Arial;
+  background: var(--bg);
+  margin:0;
+  padding:20px;
+  color:#0f172a;
+}
+.container{
+  max-width:1000px;
+  margin:0 auto;
+}
+header h1{margin:0}
+header .muted{color:var(--muted); margin-top:6px}
+
+.card{
+  background: var(--card);
+  padding:18px;
+  border-radius:12px;
+  box-shadow: 0 6px 18px rgba(12,20,30,0.06);
+  margin-top:18px;
+}
+
+.field{ margin-bottom:12px }
+.field label{ display:block; font-weight:600; margin-bottom:6px }
+.field input{ width:100%; padding:10px 12px; border-radius:8px; border:1px solid #e6eef8; background:#fbfdff }
+
+.field-inline{ display:flex; gap:12px; align-items:flex-end; }
+.field-inline > div{ flex:1 }
+
+button{ cursor:pointer; padding:10px 14px; border-radius:8px; border: none; background:#e6eef8; }
+button.primary{ background:var(--accent); color:white; font-weight:700; }
+
+.status{ margin-top:8px; color:var(--muted); font-size:0.95rem; }
+
+.table-wrapper{ overflow:auto; margin-top:12px; max-height:320px; }
+table{ width:100%; border-collapse:collapse; }
+th, td{ padding:10px; border-bottom:1px solid #eef2f7; text-align:left; vertical-align:top; }
+th{ font-size:0.9rem; color:var(--muted); background:#fbfdff; position:sticky; top:0; }
+.table-toolbar{ display:flex; gap:8px; justify-content:flex-end; margin-bottom:8px }
+.muted{ color:var(--muted) }
+footer{ margin-top:14px; text-align:center; color:var(--muted) }

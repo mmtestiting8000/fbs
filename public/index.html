@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Facebook Comment Scraper — UI</title>
+  <link rel="stylesheet" href="app.css" />
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Facebook Comment Scraper</h1>
+      <p class="muted">Extrae comentarios usando Apify y los guarda en MongoDB</p>
+    </header>
+
+    <section class="card">
+      <h2>Configuración</h2>
+      <div class="field">
+        <label>Token de Apify (puedes usar uno por petición)</label>
+        <input id="apifyToken" placeholder="apify_api_..." />
+        <small class="muted">Si dejas vacío utilizarás el token del servidor (si existe).</small>
+      </div>
+
+      <div class="field">
+        <label>Enlace de publicación de Facebook</label>
+        <input id="fbUrl" placeholder="https://www.facebook.com/..." />
+      </div>
+
+      <div class="field-inline">
+        <div>
+          <label>Limite de comentarios (opcional)</label>
+          <input id="limit" type="number" min="1" placeholder="ej. 100" />
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button id="btnScrape" class="primary">Obtener Comentarios</button>
+        </div>
+      </div>
+
+      <div id="status" class="status"></div>
+    </section>
+
+    <section class="card">
+      <h2>Comentarios guardados (últimos)</h2>
+      <div class="table-toolbar">
+        <button id="btnRefresh">Refrescar</button>
+        <button id="btnExportCSV">Exportar CSV</button>
+      </div>
+      <div class="table-wrapper">
+        <table id="commentsTable">
+          <thead>
+            <tr><th>Usuario</th><th>Nombre</th><th>Comentario</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="muted"></footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
