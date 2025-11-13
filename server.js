@@ -9,7 +9,7 @@ const path = require('path');
 
 const app = express();
 
-// --- LOGS de todas las peticiones ---
+// Log de cada request
 app.use((req, res, next) => {
   console.log(`➡️ ${req.method} ${req.url}`);
   next();
@@ -26,12 +26,11 @@ const DEFAULT_APIFY_TOKEN = process.env.DEFAULT_APIFY_TOKEN || '';
 let dbClient;
 let commentsCollection;
 
-// === CONEXIÓN A MONGO ===
 async function startDb() {
   try {
-    dbClient = new MongoClient(MONGO_URI);
+    dbClient = new MongoClient(MONGO_URI, { tls: true, serverSelectionTimeoutMS: 20000 });
     await dbClient.connect();
-    const db = dbClient.db(); // usa nombre de DB del URI o por defecto
+    const db = dbClient.db();
     commentsCollection = db.collection('comments');
     await commentsCollection.createIndex({ apifyRunId: 1 });
     console.log('✅ Conectado a MongoDB');
@@ -42,26 +41,24 @@ async function startDb() {
 }
 startDb();
 
-// === HELPERS ===
-async function startApifyRun(apifyToken, fbUrl, limit) {
-  const runUrl = `https://api.apify.com/v2/acts/easyapi~facebook-post-comments-scraper/runs?token=${apifyToken}`;
-  const actorInput = { postUrls: [fbUrl] };
-  if (limit) actorInput.maxComments = parseInt(limit, 10);
-
+async function startApifyRun(apifyToken, fbUrls, limit) {
+  const runUrl = `https://api.apify.com/v2/acts/apify~facebook-comments-scraper/runs?token=${apifyToken}`;
+  const actorInput = {
+    postUrls: fbUrls,
+    resultsLimit: limit ? parseInt(limit, 10) : undefined
+  };
   console.log('🚀 Lanzando actor Apify con payload:', actorInput);
-
   const res = await axios.post(runUrl, actorInput, {
     headers: { 'Content-Type': 'application/json' },
     validateStatus: s => true
   });
-
   if (res.status !== 201) {
     const errMsg = res.data?.error?.message || res.data || res.statusText;
     throw new Error(`Error al iniciar actor Apify: ${errMsg}`);
   }
-
-  console.log('✅ Actor iniciado. Run ID:', res.data.data.id);
-  return res.data.data.id;
+  const runId = res.data.data.id;
+  console.log('✅ Actor iniciado. Run ID:', runId);
+  return runId;
 }
 
 async function waitForRunToFinish(apifyToken, runId, onProgress) {
@@ -89,11 +86,9 @@ async function fetchCommentsFromDataset(apifyToken, datasetId) {
   return res.data;
 }
 
-// === ENDPOINT PRINCIPAL ===
 app.post('/api/scrape', async (req, res) => {
   console.log('📥 Body recibido:', req.body);
-
-  const { fbUrl, limit, apifyToken: tokenFromClient } = req.body;
+  const { fbUrls, limit, apifyToken: tokenFromClient } = req.body;
   const apifyToken = tokenFromClient || DEFAULT_APIFY_TOKEN;
 
   if (!apifyToken) {
@@ -101,23 +96,25 @@ app.post('/api/scrape', async (req, res) => {
       error: 'Falta token de Apify. Proveer apifyToken en el body o configurar DEFAULT_APIFY_TOKEN en el servidor.'
     });
   }
-  if (!fbUrl) return res.status(400).json({ error: 'fbUrl requerido' });
+  if (!fbUrls || !Array.isArray(fbUrls) || fbUrls.length === 0) {
+    return res.status(400).json({ error: 'fbUrls requerido como array de URLs' });
+  }
 
   try {
-    const runId = await startApifyRun(apifyToken, fbUrl, limit);
+    const runId = await startApifyRun(apifyToken, fbUrls, limit);
     const datasetId = await waitForRunToFinish(apifyToken, runId);
-
     const comments = await fetchCommentsFromDataset(apifyToken, datasetId);
     const docs = comments.map(c => ({
       apifyRunId: runId,
       datasetId,
       fetchedAt: new Date(),
-      userId: c.userId || null,
+      facebookUrl: c.facebookUrl || null,
+      commentUrl: c.commentUrl || null,
+      id: c.id || null,
       userName: c.userName || null,
-      commentText: c.commentText || null,
-      commentId: c.commentId || null,
-      reactionCount: c.reactionCount || null,
-      parentId: c.parentId || null,
+      commentText: c.text || c.comment || null,
+      likes: c.likes || null,
+      repliesCount: c.repliesCount || null,
       raw: c
     }));
 
@@ -130,7 +127,7 @@ app.post('/api/scrape', async (req, res) => {
       runId,
       datasetId,
       imported: docs.length,
-      comments
+      comments: docs
     });
   } catch (err) {
     console.error('❌ ERROR en /api/scrape:', err);
@@ -138,7 +135,6 @@ app.post('/api/scrape', async (req, res) => {
   }
 });
 
-// === ENDPOINT para listar ===
 app.get('/api/comments', async (req, res) => {
   const limit = Math.min(100, parseInt(req.query.limit || '50', 10));
   const page = Math.max(0, parseInt(req.query.page || '0', 10));
@@ -156,18 +152,16 @@ app.get('/api/comments', async (req, res) => {
   }
 });
 
-// === GLOBAL ERROR HANDLER ===
+// Global error handler
 app.use((err, req, res, next) => {
   console.error('🔥 Error global no manejado:', err);
   res.status(500).json({ error: 'Error interno del servidor: ' + (err.message || err) });
 });
 
-// === FRONTEND FALLBACK ===
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// === START SERVER ===
 app.listen(PORT, () => {
   console.log(`🚀 Servidor escuchando en puerto ${PORT}`);
 });
