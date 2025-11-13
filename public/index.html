@@ -1,63 +1,20 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Facebook Comments Scraper UI</title>
+  <meta charset="UTF-8" />
+  <title>Facebook Comments Scraper</title>
   <link rel="stylesheet" href="app.css" />
-  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 </head>
 <body>
   <div class="container">
-    <header>
-      <h1>Facebook Comments Scraper</h1>
-      <p class="muted">Extrae comentarios de publicaciones de Facebook</p>
-    </header>
+    <h1>Facebook Comments Scraper</h1>
+    <input id="fbUrl" type="text" placeholder="URL del post de Facebook" />
+    <input id="limit" type="number" placeholder="Límite de comentarios (opcional)" />
+    <button id="scrapeBtn">Iniciar extracción</button>
 
-    <section class="card">
-      <h2>Configuración</h2>
-      <div class="field">
-        <label>Token de Apify (opcional)</label>
-        <input id="apifyToken" placeholder="apify_api_..." />
-        <small class="muted">Si dejas vacío, se usará el token del servidor.</small>
-      </div>
-
-      <div class="field">
-        <label>Enlaces de publicaciones de Facebook (una por línea)</label>
-        <textarea id="fbUrls" placeholder="https://www.facebook.com/…"></textarea>
-      </div>
-
-      <div class="field">
-        <label>Límite de comentarios por post (opcional)</label>
-        <input id="limit" type="number" min="1" placeholder="ej. 100" />
-      </div>
-
-      <div class="field-inline">
-        <button id="btnScrape" class="primary">Obtener Comentarios</button>
-      </div>
-
-      <div id="status" class="status"></div>
-    </section>
-
-    <section class="card">
-      <h2>Comentarios guardados (últimos)</h2>
-      <div class="table-toolbar">
-        <button id="btnRefresh">Refrescar</button>
-        <button id="btnExportCSV">Exportar CSV</button>
-      </div>
-      <div class="table-wrapper">
-        <table id="commentsTable">
-          <thead>
-            <tr><th>Post URL</th><th>Usuario</th><th>Comentario</th><th>Likes</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-
-    <footer class="muted">Hecho con ❤️ — usa tokens privados en producción</footer>
+    <div id="status"></div>
+    <ul id="commentsList"></ul>
   </div>
-
   <script src="app.js"></script>
 </body>
 </html>
