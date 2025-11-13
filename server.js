@@ -8,13 +8,6 @@ const { MongoClient } = require('mongodb');
 const path = require('path');
 
 const app = express();
-
-// Log de cada request
-app.use((req, res, next) => {
-  console.log(`➡️ ${req.method} ${req.url}`);
-  next();
-});
-
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -26,39 +19,49 @@ const DEFAULT_APIFY_TOKEN = process.env.DEFAULT_APIFY_TOKEN || '';
 let dbClient;
 let commentsCollection;
 
+// --- CONEXIÓN MONGO ---
 async function startDb() {
   try {
-    dbClient = new MongoClient(MONGO_URI, { tls: true, serverSelectionTimeoutMS: 20000 });
+    dbClient = new MongoClient(MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      tls: true, // 🔹 fuerza conexión TLS (Atlas exige esto)
+      tlsAllowInvalidCertificates: true, // evitar error SSL interno en Render
+    });
     await dbClient.connect();
     const db = dbClient.db();
     commentsCollection = db.collection('comments');
     await commentsCollection.createIndex({ apifyRunId: 1 });
-    console.log('✅ Conectado a MongoDB');
+    console.log('✅ MongoDB conectado correctamente');
   } catch (err) {
-    console.error('❌ Error conectando a MongoDB:', err.message);
+    console.error('❌ Error conectando a Mongo:', err);
     process.exit(1);
   }
 }
 startDb();
 
+// --- FUNCIONES DE APIFY ---
 async function startApifyRun(apifyToken, fbUrls, limit) {
   const runUrl = `https://api.apify.com/v2/acts/apify~facebook-comments-scraper/runs?token=${apifyToken}`;
   const actorInput = {
-    postUrls: fbUrls,
-    resultsLimit: limit ? parseInt(limit, 10) : undefined
+    fbUrls, // ahora debe ser un array
   };
-  console.log('🚀 Lanzando actor Apify con payload:', actorInput);
+  if (limit) actorInput.maxComments = parseInt(limit, 10);
+
   const res = await axios.post(runUrl, actorInput, {
     headers: { 'Content-Type': 'application/json' },
-    validateStatus: s => true
+    validateStatus: s => true,
   });
+
   if (res.status !== 201) {
-    const errMsg = res.data?.error?.message || res.data || res.statusText;
-    throw new Error(`Error al iniciar actor Apify: ${errMsg}`);
+    const errMsg =
+      res.data?.error?.message || res.data || res.statusText;
+    const e = new Error('Error al iniciar actor Apify: ' + errMsg);
+    e.status = res.status;
+    throw e;
   }
-  const runId = res.data.data.id;
-  console.log('✅ Actor iniciado. Run ID:', runId);
-  return runId;
+
+  return res.data.data.id;
 }
 
 async function waitForRunToFinish(apifyToken, runId, onProgress) {
@@ -67,71 +70,58 @@ async function waitForRunToFinish(apifyToken, runId, onProgress) {
     const res = await axios.get(statusUrl);
     const data = res.data;
     const status = data.data?.status;
-    if (onProgress) onProgress(status, data);
-    console.log('⏳ Estado del run:', status);
-    if (status === 'SUCCEEDED') {
-      console.log('✅ Ejecución Apify completada.');
-      return data.data.defaultDatasetId;
-    } else if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(status)) {
-      throw new Error(`❌ La ejecución falló en Apify: ${status}`);
-    }
+    if (onProgress) onProgress(status);
+    if (status === 'SUCCEEDED') return data.data.defaultDatasetId;
+    if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(status))
+      throw new Error('La ejecución falló en Apify: ' + status);
     await new Promise(r => setTimeout(r, 5000));
   }
 }
 
 async function fetchCommentsFromDataset(apifyToken, datasetId) {
   const datasetUrl = `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apifyToken}&clean=true`;
-  console.log('📦 Descargando dataset:', datasetId);
   const res = await axios.get(datasetUrl);
   return res.data;
 }
 
+// --- ENDPOINTS ---
 app.post('/api/scrape', async (req, res) => {
-  console.log('📥 Body recibido:', req.body);
-  const { fbUrls, limit, apifyToken: tokenFromClient } = req.body;
+  const { fbUrl, limit, apifyToken: tokenFromClient } = req.body;
   const apifyToken = tokenFromClient || DEFAULT_APIFY_TOKEN;
 
-  if (!apifyToken) {
-    return res.status(400).json({
-      error: 'Falta token de Apify. Proveer apifyToken en el body o configurar DEFAULT_APIFY_TOKEN en el servidor.'
-    });
-  }
-  if (!fbUrls || !Array.isArray(fbUrls) || fbUrls.length === 0) {
-    return res.status(400).json({ error: 'fbUrls requerido como array de URLs' });
-  }
+  if (!apifyToken)
+    return res.status(400).json({ error: 'Falta token de Apify' });
+  if (!fbUrl)
+    return res.status(400).json({ error: 'fbUrl requerido' });
 
   try {
+    const fbUrls = Array.isArray(fbUrl) ? fbUrl : [fbUrl];
     const runId = await startApifyRun(apifyToken, fbUrls, limit);
-    const datasetId = await waitForRunToFinish(apifyToken, runId);
+
+    const datasetId = await waitForRunToFinish(apifyToken, runId, status =>
+      console.log('Apify run status:', status)
+    );
+
     const comments = await fetchCommentsFromDataset(apifyToken, datasetId);
     const docs = comments.map(c => ({
       apifyRunId: runId,
       datasetId,
       fetchedAt: new Date(),
-      facebookUrl: c.facebookUrl || null,
-      commentUrl: c.commentUrl || null,
-      id: c.id || null,
+      userId: c.userId || null,
       userName: c.userName || null,
-      commentText: c.text || c.comment || null,
-      likes: c.likes || null,
-      repliesCount: c.repliesCount || null,
-      raw: c
+      commentText: c.commentText || null,
+      commentId: c.commentId || null,
+      reactionCount: c.reactionCount || null,
+      parentId: c.parentId || null,
+      raw: c,
     }));
 
-    if (docs.length) {
-      await commentsCollection.insertMany(docs);
-    }
+    if (docs.length) await commentsCollection.insertMany(docs);
 
-    res.json({
-      ok: true,
-      runId,
-      datasetId,
-      imported: docs.length,
-      comments: docs
-    });
+    res.json({ ok: true, runId, datasetId, imported: docs.length });
   } catch (err) {
-    console.error('❌ ERROR en /api/scrape:', err);
-    res.status(500).json({ error: err.message || 'Error desconocido en /api/scrape' });
+    console.error('Error en /api/scrape:', err);
+    res.status(500).json({ error: String(err.message || err) });
   }
 });
 
@@ -147,15 +137,8 @@ app.get('/api/comments', async (req, res) => {
     const items = await cursor.toArray();
     res.json({ ok: true, items });
   } catch (err) {
-    console.error('❌ ERROR en /api/comments:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: String(err) });
   }
-});
-
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error('🔥 Error global no manejado:', err);
-  res.status(500).json({ error: 'Error interno del servidor: ' + (err.message || err) });
 });
 
 app.get('*', (req, res) => {
@@ -163,5 +146,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor escuchando en puerto ${PORT}`);
+  console.log(`🚀 Server listening on http://localhost:${PORT}`);
 });
