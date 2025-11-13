@@ -4,55 +4,62 @@ $(function(){
     $('#status').text(txt).css('color', isError ? 'crimson' : '');
   }
 
-  async function fetchComments() {
-    setStatus('Cargando comentarios...');
+  async function fetchCommentsSaved() {
+    setStatus('Cargando comentarios guardados...');
     try {
       const res = await $.getJSON('/api/comments?limit=100');
       const items = res.items || [];
-      const $b = $('#commentsTable tbody').empty();
+      const $tbody = $('#commentsTable tbody').empty();
       items.forEach(it => {
-        const user = it.userId || '-';
-        const name = it.userName || '-';
-        const text = it.commentText ? $('<div>').text(it.commentText).html() : '-';
-        const tr = `<tr><td>${user}</td><td>${name}</td><td>${text}</td></tr>`;
-        $b.append(tr);
+        const postUrl = it.facebookUrl || '-';
+        const userName = it.userName || '-';
+        const text = it.commentText || it.text || '-';
+        const likes = it.likes != null ? it.likes : '-';
+        const tr = `<tr><td>${postUrl}</td><td>${userName}</td><td>${text}</td><td>${likes}</td></tr>`;
+        $tbody.append(tr);
       });
-      setStatus(`Cargados ${items.length} comentarios (mostrando hasta 100).`);
+      setStatus(`Cargados ${items.length} comentarios (máximo 100).`);
     } catch (err) {
-      setStatus('Error cargando comentarios: ' + (err.responseJSON?.error || err.statusText || err), true);
+      setStatus('Error al cargar comentarios: ' + (err.responseJSON?.error || err.statusText || err), true);
     }
   }
 
-  $('#btnRefresh').on('click', fetchComments);
-  fetchComments();
+  $('#btnRefresh').on('click', fetchCommentsSaved);
+  fetchCommentsSaved();
 
   $('#btnScrape').on('click', async function(){
-    const fbUrl = $('#fbUrl').val().trim();
-    const limit = $('#limit').val().trim();
     const apifyToken = $('#apifyToken').val().trim();
+    const fbUrlsRaw = $('#fbUrls').val().trim();
+    const limitVal = $('#limit').val().trim();
 
-    if (!fbUrl) { setStatus('Ingresa la URL de la publicación.', true); return; }
+    if (!fbUrlsRaw) {
+      setStatus('Ingresa al menos un enlace de publicación de Facebook.', true);
+      return;
+    }
+    const fbUrls = fbUrlsRaw.split('\n').map(s => s.trim()).filter(s => s);
 
-    setStatus('Iniciando extracción en Apify, esto puede tardar varios segundos...');
+    setStatus('Iniciando extracción, esto puede tardar…');
+    $('#btnScrape').prop('disabled', true).text('Obteniendo…');
 
     try {
-      const payload = { fbUrl, limit: limit || undefined, apifyToken: apifyToken || undefined };
-      // Bloquear UI
-      $('#btnScrape').prop('disabled', true).text('Obteniendo...');
+      const payload = { fbUrls };
+      if (limitVal) payload.limit = limitVal;
+      if (apifyToken) payload.apifyToken = apifyToken;
+
       const res = await $.ajax({
         url: '/api/scrape',
         method: 'POST',
         contentType: 'application/json',
         data: JSON.stringify(payload),
         dataType: 'json',
-        timeout: 20 * 60 * 1000 // 20 min en caso de ejecuciones muy largas
+        timeout: 20 * 60 * 1000 // 20 minutos
       });
 
       if (res.ok) {
-        setStatus(`Éxito: importados ${res.imported} comentarios (runId: ${res.runId})`);
-        fetchComments();
+        setStatus(`Éxito: se importaron ${res.imported} comentarios. Run ID: ${res.runId}`);
+        fetchCommentsSaved();
       } else {
-        setStatus('Respuesta inesperada: ' + JSON.stringify(res), true);
+        setStatus('Respuesta inesperada del servidor: ' + JSON.stringify(res), true);
       }
     } catch (err) {
       const msg = err.responseJSON?.error || (err.statusText || err);
@@ -63,19 +70,21 @@ $(function(){
   });
 
   $('#btnExportCSV').on('click', function(){
-    // Exportar tabla a CSV simple (cliente)
     const rows = [];
     $('#commentsTable tbody tr').each(function(){
       const cols = $(this).find('td').map(function(){ return $(this).text().trim(); }).get();
       rows.push(cols.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
     });
-    if (!rows.length) { setStatus('No hay datos para exportar.', true); return; }
-    const csv = ['Usuario,Nombre,Comentario', ...rows].join('\r\n');
+    if (!rows.length) {
+      setStatus('No hay datos para exportar.', true);
+      return;
+    }
+    const csv = ['PostURL,Usuario,Comentario,Likes', ...rows].join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'comments_export.csv';
+    a.download = 'facebook_comments_export.csv';
     document.body.appendChild(a);
     a.click();
     a.remove();
