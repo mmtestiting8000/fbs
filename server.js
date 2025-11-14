@@ -33,34 +33,46 @@ app.post("/run", async (req, res) => {
     }
 
     const apiToken = token?.trim() || DEFAULT_APIFY_TOKEN;
-    if (!apiToken) return res.status(400).json({ error: "No hay token disponible" });
+    if (!apiToken) {
+      return res.status(400).json({ error: "No hay token disponible" });
+    }
 
-    // Iniciar actor
-    const start = await fetch(`https://api.apify.com/v2/acts/apify~facebook-comments-scraper/runs?token=${apiToken}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fbUrls,
-        resultsLimit: limit ? Number(limit) : undefined
-      })
-    });
+    // MAPEO CORRECTO
+    const startUrls = fbUrls.map(url => ({ url }));
 
-    const startJson = await start.json();
+    console.log("➡️ startUrls enviados:", startUrls);
+
+    // INICIAR ACTOR CORRECTO
+    const startRun = await fetch(
+      `https://api.apify.com/v2/acts/apify~facebook-comments-scraper/runs?token=${apiToken}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startUrls,
+          resultsLimit: limit ? Number(limit) : undefined
+        })
+      }
+    );
+
+    const startJson = await startRun.json();
     console.log("▶️ start JSON:", startJson);
 
-    if (!start.ok) return res.status(500).json(startJson);
+    if (!startRun.ok) {
+      return res.status(500).json(startJson);
+    }
 
     const runId = startJson.data.id;
 
-    // Polling
+    // ========== POLLING ==========
     while (true) {
       const poll = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apiToken}`);
-      const data = await poll.json();
+      const pollJson = await poll.json();
 
-      console.log("⏳ Poll:", data.data.status);
+      console.log("⏳ Estado:", pollJson.data.status);
 
-      if (data.data.status === "SUCCEEDED") {
-        const datasetId = data.data.defaultDatasetId;
+      if (pollJson.data.status === "SUCCEEDED") {
+        const datasetId = pollJson.data.defaultDatasetId;
 
         const itemsRes = await fetch(
           `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apiToken}&clean=true`
@@ -71,8 +83,8 @@ app.post("/run", async (req, res) => {
         return res.json({ success: true, data: items });
       }
 
-      if (data.data.status === "FAILED") {
-        return res.status(500).json({ error: "Actor failed" });
+      if (pollJson.data.status === "FAILED") {
+        return res.status(500).json({ error: "El actor falló" });
       }
 
       await new Promise(r => setTimeout(r, 3000));
@@ -83,6 +95,7 @@ app.post("/run", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // =============== GUARDAR / CONSULTAR JSON LOCAL ===============
 const DB_FILE = path.join(__dirname, "comments.json");
@@ -104,3 +117,4 @@ app.get("/comments", (req, res) => {
 app.use(express.static(path.join(__dirname, "public")));
 
 app.listen(PORT, () => console.log(`🔥 Server running http://localhost:${PORT}`));
+
