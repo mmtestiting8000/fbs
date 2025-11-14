@@ -10,7 +10,7 @@ dotenv.config();
 const app = express();
 app.use(bodyParser.json());
 app.use(cors());
-app.use(express.static("public")); 
+app.use(express.static("public"));
 
 // MongoDB CONNECTION -------------------------
 const MONGO_URI = process.env.MONGO_URI;
@@ -21,18 +21,28 @@ if (!MONGO_URI) {
 }
 
 const client = new MongoClient(MONGO_URI);
-
 let commentsCollection;
 
-async function connectDB() {
-    await client.connect();
-    const db = client.db("fb_scraper");
-    commentsCollection = db.collection("comments");
-    console.log("MongoDB conectado ✔");
-}
-connectDB();
+async function startServer() {
+    try {
+        await client.connect();
+        const db = client.db("fb_scraper");
+        commentsCollection = db.collection("comments");
+        console.log("MongoDB conectado ✔");
 
+        // Start server ONLY after DB is ready
+        const PORT = process.env.PORT || 3000;
+        app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+    } catch (err) {
+        console.error("❌ Error conectando a Mongo:", err);
+        process.exit(1);
+    }
+}
+
+startServer();
 // --------------------------------------------
+
 
 // SAVE SCRAPER RESULTS ------------------------
 app.post("/save-comments", async (req, res) => {
@@ -60,6 +70,7 @@ app.post("/save-comments", async (req, res) => {
     }
 });
 
+
 // GET ONLY THE LAST SCRAPE --------------------
 app.get("/comments", async (req, res) => {
     try {
@@ -86,6 +97,7 @@ app.get("/comments", async (req, res) => {
         return res.status(500).json({ error: "Failed loading comments" });
     }
 });
+
 
 // RUN SCRAPER VIA API -------------------------
 app.post("/run-scraper", async (req, res) => {
@@ -131,6 +143,3 @@ app.post("/run-scraper", async (req, res) => {
         res.status(500).json({ error: "Scraper failed" });
     }
 });
-
-// START SERVER -------------------------
-app.listen(3000, () => console.log("Server running on port 3000"));
