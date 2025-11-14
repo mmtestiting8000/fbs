@@ -1,145 +1,110 @@
+// server.js
 import express from "express";
-import bodyParser from "body-parser";
-import fetch from "node-fetch";
 import cors from "cors";
+import fetch from "node-fetch";
+import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
-import { MongoClient, ObjectId } from "mongodb";
 
 dotenv.config();
 
 const app = express();
-app.use(bodyParser.json());
 app.use(cors());
-app.use(express.static("public"));
+app.use(express.json());
 
-// MongoDB CONNECTION -------------------------
-const MONGO_URI = process.env.MONGO_URI;
+// -------------------------
+// MongoDB
+// -------------------------
+const mongoUri = process.env.MONGODB_URI;
 
-if (!MONGO_URI) {
-    console.error("❌ ERROR FATAL: MONGO_URI no está definido en Render");
-    process.exit(1);
+let db = null;
+
+async function connectDB() {
+  if (!mongoUri) {
+    console.error("❌ ERROR: MONGODB_URI no está definida.");
+    return;
+  }
+  try {
+    const client = new MongoClient(mongoUri);
+    await client.connect();
+    db = client.db("fb_scraper");
+    console.log("✅ MongoDB conectado");
+  } catch (err) {
+    console.error("❌ Error conectando a MongoDB:", err);
+  }
 }
 
-const client = new MongoClient(MONGO_URI);
-let commentsCollection;
+connectDB();
 
-async function startServer() {
-    try {
-        await client.connect();
-        const db = client.db("fb_scraper");
-        commentsCollection = db.collection("comments");
-        console.log("MongoDB conectado ✔");
-
-        // Start server ONLY after DB is ready
-        const PORT = process.env.PORT || 3000;
-        app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-    } catch (err) {
-        console.error("❌ Error conectando a Mongo:", err);
-        process.exit(1);
-    }
-}
-
-startServer();
-// --------------------------------------------
-
-
-// SAVE SCRAPER RESULTS ------------------------
-app.post("/save-comments", async (req, res) => {
-    try {
-        const comments = req.body.comments;
-
-        if (!Array.isArray(comments)) {
-            return res.status(400).json({ error: "comments must be an array" });
-        }
-
-        const batchId = new ObjectId().toString();
-
-        const docs = comments.map(c => ({
-            ...c,
-            batchId,
-            createdAt: new Date()
-        }));
-
-        await commentsCollection.insertMany(docs);
-
-        return res.json({ success: true });
-    } catch (err) {
-        console.error("Error saving comments:", err);
-        return res.status(500).json({ error: "Failed saving comments" });
-    }
-});
-
-
-// GET ONLY THE LAST SCRAPE --------------------
+// -------------------------
+// GET /comments → solo último registro
+// -------------------------
 app.get("/comments", async (req, res) => {
-    try {
-        const latest = await commentsCollection
-            .find({})
-            .sort({ createdAt: -1 })
-            .limit(1)
-            .toArray();
+  try {
+    if (!db) return res.json([]);
 
-        if (latest.length === 0) {
-            return res.json([]);
-        }
+    const last = await db.collection("comments")
+      .find({})
+      .sort({ _id: -1 })
+      .limit(1)
+      .toArray();
 
-        const lastBatchId = latest[0].batchId;
-
-        const lastBatchComments = await commentsCollection
-            .find({ batchId: lastBatchId })
-            .sort({ createdAt: 1 })
-            .toArray();
-
-        return res.json(lastBatchComments);
-    } catch (err) {
-        console.error("Error fetching last batch:", err);
-        return res.status(500).json({ error: "Failed loading comments" });
-    }
+    return res.json(last.length ? last[0].data : []);
+  } catch (err) {
+    console.error("❌ Error GET /comments:", err);
+    res.status(500).json({ error: "Error al leer comentarios." });
+  }
 });
 
+// -------------------------
+// POST /scrape → ejecuta actor en Apify
+// -------------------------
+app.post("/scrape", async (req, res) => {
+  const { apiToken, facebookUrl, limitComments } = req.body;
+  console.log("📩 Datos recibidos:", req.body);
 
-// RUN SCRAPER VIA API -------------------------
-app.post("/run-scraper", async (req, res) => {
-    try {
-        const { token, urls, limit } = req.body;
+  if (!apiToken || !facebookUrl)
+    return res.status(400).json({ error: "Faltan parámetros." });
 
-        const runResponse = await fetch("https://api.apify.com/v2/actor-tasks/facebook-scraper/run-sync", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                startUrls: urls.map(u => ({ url: u })),
-                resultsLimit: limit || 200
-            })
-        });
+  try {
+    // Ejecutar Apify Actor
+    const run = await fetch(`https://api.apify.com/v2/actor-tasks/facebook-comments-run/run-sync?token=${apiToken}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startUrls: [{ url: facebookUrl }],
+        resultsLimit: Number(limitComments) || 50
+      })
+    });
 
-        const data = await runResponse.json();
+    const output = await run.json();
 
-        if (!data.defaultDatasetId) {
-            return res.status(500).json({ error: "No dataset from Apify" });
-        }
-
-        const itemsResponse = await fetch(
-            `https://api.apify.com/v2/datasets/${data.defaultDatasetId}/items?clean=true`
-        );
-
-        const rawItems = await itemsResponse.json();
-
-        const comments = rawItems.map(item => ({
-            postTitle: item?.postTitle || "",
-            text: item?.text || "",
-            likesCount: item?.likesCount || 0,
-            facebookUrl: item?.facebookUrl || "",
-            authorName: item?.authorName || "",
-        }));
-
-        return res.json({ comments });
-
-    } catch (err) {
-        console.error("SCRAPER error:", err);
-        res.status(500).json({ error: "Scraper failed" });
+    if (!output || !output.data || !output.data.defaultDatasetId) {
+      return res.status(500).json({ error: "No se obtuvo datasetId." });
     }
+
+    const datasetId = output.data.defaultDatasetId;
+
+    // Obtener dataset
+    const datasetReq = await fetch(
+      `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apiToken}`
+    );
+
+    const dataset = await datasetReq.json();
+
+    // Guardar como último registro
+    await db.collection("comments").insertOne({
+      timestamp: new Date(),
+      data: dataset
+    });
+
+    console.log("💾 Datos guardados en MongoDB.");
+
+    res.json({ ok: true, data: dataset });
+  } catch (err) {
+    console.error("❌ Error en /scrape:", err);
+    res.status(500).json({ error: "Error ejecutando scrape." });
+  }
 });
+
+// -------------------------
+app.listen(3000, () => console.log("🚀 Servidor en puerto 3000"));
