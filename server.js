@@ -3,8 +3,6 @@ import cors from "cors";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
 import { MongoClient } from "mongodb";
-import path from "path";
-import { fileURLToPath } from "url";
 
 dotenv.config();
 
@@ -12,100 +10,98 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ------------------------------
-// SERVIR FRONTEND
-// ------------------------------
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const PORT = process.env.PORT || 3000;
+const MONGO_URI = process.env.MONGODB_URI;
 
-app.use(express.static(path.join(__dirname, "public")));
-
-// ------------------------------
-// MONGO
-// ------------------------------
+// Variable global para almacenar la conexión (si existe)
 let db = null;
-async function initMongo() {
+
+/* ======================================================
+   1. Intentar conectar a Mongo (pero sin detener el server si falla)
+====================================================== */
+async function connectToMongo() {
   try {
-    const client = new MongoClient(process.env.MONGO_URI);
+    console.log("Intentando conectar a MongoDB...");
+
+    const client = new MongoClient(MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 4000, // evita que tarde demasiado
+    });
+
     await client.connect();
-    db = client.db("fb_scraper");
-    console.log("✅ Mongo conectado");
-  } catch (err) {
-    console.error("❌ Error Mongo:", err.message);
+    db = client.db();
+    console.log("✅ MongoDB conectado correctamente");
+
+  } catch (error) {
+    console.warn("⚠️ No se pudo conectar a MongoDB, el scraper funcionará sin base de datos.");
+    console.warn("Detalle:", error.message);
+    db = null; // aseguramos estado consistente
   }
 }
-initMongo();
 
-// ------------------------------
-// GET ÚLTIMO SCRAPE
-// ------------------------------
-app.get("/comments", async (req, res) => {
+connectToMongo();
+
+/* ======================================================
+   2. SCRAPER (ejemplo)
+====================================================== */
+async function scrapePage() {
+  const url = "https://www.example.com/";
+
   try {
-    if (!db) return res.json([]);
+    const response = await fetch(url);
+    const html = await response.text();
 
-    const last = await db.collection("comments")
-      .find({})
-      .sort({ _id: -1 })
-      .limit(1)
-      .toArray();
+    return {
+      ok: true,
+      data: html.substring(0, 200), // ejemplo
+    };
 
-    res.json(last.length ? last[0].data : []);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    return { ok: false, error: "Error al scrapear: " + error.message };
   }
+}
+
+/* ======================================================
+   3. Endpoint principal con fallback por si Mongo está caído
+====================================================== */
+app.get("/scrape", async (req, res) => {
+  const result = await scrapePage();
+
+  if (!result.ok) {
+    return res.status(500).json({ error: result.error });
+  }
+
+  // Si Mongo está disponible, insertar
+  if (db) {
+    try {
+      await db.collection("scrapedData").insertOne({
+        timestamp: new Date(),
+        content: result.data,
+      });
+
+      return res.json({
+        mongo: "ok",
+        message: "Scrape almacenado correctamente",
+        data: result.data,
+      });
+
+    } catch (error) {
+      console.warn("⚠️ Error insertando en Mongo:", error.message);
+    }
+  }
+
+  // Si Mongo NO está disponible → devolver dato con advertencia
+  return res.json({
+    mongo: "offline",
+    warning: "MongoDB no está conectado, devolviendo sólo los datos del scraper",
+    data: result.data,
+  });
 });
 
-// ------------------------------
-// POST SCRAPE
-// ------------------------------
-app.post("/scrape", async (req, res) => {
-  try {
-    const { apiToken, facebookUrl, limitComments } = req.body;
-
-    if (!apiToken || !facebookUrl)
-      return res.status(400).json({ error: "Faltan datos" });
-
-    const run = await fetch(
-      `https://api.apify.com/v2/actor-tasks/facebook-comments-run/run-sync?token=${apiToken}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          startUrls: [{ url: facebookUrl }],
-          resultsLimit: Number(limitComments) || 50
-        })
-      }
-    );
-
-    const runData = await run.json();
-    const datasetId = runData?.data?.defaultDatasetId;
-
-    if (!datasetId)
-      return res.status(500).json({ error: "No dataset" });
-
-    const datasetReq = await fetch(
-      `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apiToken}`
-    );
-
-    let rawData = await datasetReq.json();
-
-    // SOLO los campos solicitados
-    const filtered = rawData.map(c => ({
-      postTitle: c.postTitle || "",
-      text: c.text || "",
-      likesCount: c.likesCount || 0,
-      facebookUrl: facebookUrl
-    }));
-
-    if (db) await db.collection("comments").insertOne({ timestamp: new Date(), data: filtered });
-
-    res.json({ ok: true, data: filtered });
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+/* ======================================================
+   4. Servidor iniciado
+====================================================== */
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en puerto ${PORT}`);
 });
-
-// ------------------------------
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("🔥 Server ON:", PORT));
