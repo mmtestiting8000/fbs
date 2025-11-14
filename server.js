@@ -13,7 +13,13 @@ app.use(cors());
 app.use(express.static("public")); 
 
 // MongoDB CONNECTION -------------------------
-const MONGO_URI = process.env.MONGODB_URI;
+const MONGO_URI = process.env.MONGO_URI;
+
+if (!MONGO_URI) {
+    console.error("❌ ERROR FATAL: MONGO_URI no está definido en Render");
+    process.exit(1);
+}
+
 const client = new MongoClient(MONGO_URI);
 
 let commentsCollection;
@@ -37,7 +43,6 @@ app.post("/save-comments", async (req, res) => {
             return res.status(400).json({ error: "comments must be an array" });
         }
 
-        // create a new batch ID (only last batch will be displayed)
         const batchId = new ObjectId().toString();
 
         const docs = comments.map(c => ({
@@ -55,11 +60,9 @@ app.post("/save-comments", async (req, res) => {
     }
 });
 
-
 // GET ONLY THE LAST SCRAPE --------------------
 app.get("/comments", async (req, res) => {
     try {
-        // find the newest batch
         const latest = await commentsCollection
             .find({})
             .sort({ createdAt: -1 })
@@ -108,13 +111,11 @@ app.post("/run-scraper", async (req, res) => {
         }
 
         const itemsResponse = await fetch(
-            `https://api.apify.com/v2/datasets/${data.defaultDatasetId}/items?clean=true`,
-            { method: "GET" }
+            `https://api.apify.com/v2/datasets/${data.defaultDatasetId}/items?clean=true`
         );
 
         const rawItems = await itemsResponse.json();
 
-        // normalize for frontend
         const comments = rawItems.map(item => ({
             postTitle: item?.postTitle || "",
             text: item?.text || "",
