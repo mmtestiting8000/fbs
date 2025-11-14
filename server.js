@@ -1,120 +1,154 @@
+// server.js
 import express from "express";
-import bodyParser from "body-parser";
-import path from "path";
 import fetch from "node-fetch";
+import path from "path";
 import { fileURLToPath } from "url";
-import fs from "fs";
+import dotenv from "dotenv";
+import cors from "cors";
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-const DEFAULT_APIFY_TOKEN = process.env.APIFY_TOKEN || "";
+// ---------------------------
+// MIDDLEWARE
+// ---------------------------
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
-app.use(bodyParser.json());
-
-// LOGS
-app.use((req, res, next) => {
-  console.log("➡️ Request:", req.method, req.url);
-  next();
-});
-
-// =============== POST /run ===============
+// ---------------------------
+// ENDPOINT: /run
+// ---------------------------
 app.post("/run", async (req, res) => {
   try {
-    console.log("📥 Body recibido:", req.body);
+    console.log("Enviando petición /run");
 
-    const { fbUrls, limit, token } = req.body;
+    const { fbUrls, limit, apifyToken } = req.body;
 
-    if (!Array.isArray(fbUrls) || fbUrls.length === 0) {
-      return res.status(400).json({ error: "fbUrls debe ser un array con URLs" });
+    // ---------------------------
+    // VALIDACIONES
+    // ---------------------------
+    if (!fbUrls || !Array.isArray(fbUrls) || fbUrls.length === 0) {
+      return res.status(400).json({
+        error: "fbUrls debe ser un arreglo con al menos una URL."
+      });
     }
 
-    const apiToken = token?.trim() || DEFAULT_APIFY_TOKEN;
-    if (!apiToken) {
-      return res.status(400).json({ error: "No hay token disponible" });
+    // Convertir URLs simples → startUrls: [{url:"..."}]
+    const startUrls = fbUrls
+      .map(u => (typeof u === "string" && u.trim() !== "" ? { url: u.trim() } : null))
+      .filter(Boolean);
+
+    if (startUrls.length === 0) {
+      return res.status(400).json({
+        error: "No hay URLs válidas en fbUrls."
+      });
     }
 
-    // MAPEO CORRECTO
-    const startUrls = fbUrls.map(url => ({ url }));
+    const tokenToUse = apifyToken || process.env.APIFY_TOKEN;
 
-    console.log("➡️ startUrls enviados:", startUrls);
+    if (!tokenToUse) {
+      return res.status(400).json({
+        error: "No hay token de Apify disponible (ni en el servidor ni en el POST)."
+      });
+    }
 
-    // INICIAR ACTOR CORRECTO
-    const startRun = await fetch(
-      `https://api.apify.com/v2/acts/apify~facebook-comments-scraper/runs?token=${apiToken}`,
+    // ---------------------------
+    // CREAR EJECUCIÓN EN APIFY
+    // ---------------------------
+    const runPayload = {
+      startUrls,
+      resultsLimit: limit ? Number(limit) : undefined
+    };
+
+    console.log("Payload enviado a Apify:", runPayload);
+
+    const response = await fetch(
+      "https://api.apify.com/v2/acts/apify~facebook-post-comments-scraper/run?waitForFinish=1",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          startUrls,
-          resultsLimit: limit ? Number(limit) : undefined
-        })
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${tokenToUse}`
+        },
+        body: JSON.stringify({ input: runPayload })
       }
     );
 
-    const startJson = await startRun.json();
-    console.log("▶️ start JSON:", startJson);
+    const json = await response.json();
 
-    if (!startRun.ok) {
-      return res.status(500).json(startJson);
+    console.log("Respuesta /run:", json);
+
+    if (json.error) {
+      return res.status(400).json({ error: json.error });
     }
 
-    const runId = startJson.data.id;
-
-    // ========== POLLING ==========
-    while (true) {
-      const poll = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apiToken}`);
-      const pollJson = await poll.json();
-
-      console.log("⏳ Estado:", pollJson.data.status);
-
-      if (pollJson.data.status === "SUCCEEDED") {
-        const datasetId = pollJson.data.defaultDatasetId;
-
-        const itemsRes = await fetch(
-          `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apiToken}&clean=true`
-        );
-
-        const items = await itemsRes.json();
-
-        return res.json({ success: true, data: items });
-      }
-
-      if (pollJson.data.status === "FAILED") {
-        return res.status(500).json({ error: "El actor falló" });
-      }
-
-      await new Promise(r => setTimeout(r, 3000));
-    }
+    return res.json(json);
 
   } catch (err) {
-    console.error("🔥 Error en /run:", err);
-    res.status(500).json({ error: err.message });
+    console.error("❌ Error en /run:", err);
+    return res.status(500).json({
+      error: "Error interno en servidor",
+      details: err.message
+    });
   }
 });
 
+// ---------------------------
+// ENDPOINT: /data
+// obtener datos almacenados
+// ---------------------------
+app.get("/data", async (req, res) => {
+  try {
+    const tokenToUse = process.env.APIFY_TOKEN;
+    if (!tokenToUse) {
+      return res.status(400).json({
+        error: "No hay APIFY_TOKEN configurado en el servidor."
+      });
+    }
 
-// =============== GUARDAR / CONSULTAR JSON LOCAL ===============
-const DB_FILE = path.join(__dirname, "comments.json");
-if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, "[]");
+    const datasetRes = await fetch(
+      "https://api.apify.com/v2/datasets?limit=1&desc=1",
+      {
+        headers: { Authorization: `Bearer ${tokenToUse}` }
+      }
+    );
 
-app.post("/save", (req, res) => {
-  const db = JSON.parse(fs.readFileSync(DB_FILE));
-  db.push(...req.body.items);
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-  res.json({ success: true });
+    const datasetJson = await datasetRes.json();
+
+    if (!datasetJson?.data?.items?.length) {
+      return res.json({ items: [] });
+    }
+
+    const datasetId = datasetJson.data.items[0].id;
+
+    const itemsRes = await fetch(
+      `https://api.apify.com/v2/datasets/${datasetId}/items?clean=true&format=json`,
+      {
+        headers: { Authorization: `Bearer ${tokenToUse}` }
+      }
+    );
+
+    const itemsJson = await itemsRes.json();
+    return res.json({ items: itemsJson });
+
+  } catch (err) {
+    console.error("❌ Error en /data:", err);
+    return res.status(500).json({
+      error: "Error al obtener datos",
+      details: err.message
+    });
+  }
 });
 
-app.get("/comments", (req, res) => {
-  const db = JSON.parse(fs.readFileSync(DB_FILE));
-  res.json({ success: true, data: db });
+// ---------------------------
+// INICIAR SERVIDOR
+// ---------------------------
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
-
-// ❗ IMPORTANTE: archivos estáticos al FINAL
-app.use(express.static(path.join(__dirname, "public")));
-
-app.listen(PORT, () => console.log(`🔥 Server running http://localhost:${PORT}`));
-
