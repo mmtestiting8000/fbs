@@ -11,32 +11,13 @@
   <div class="container">
 
     <header>
-      <h1>Facebook Comments Scraper</h1>
+      <h1>Últimos comentarios</h1>
       <p class="muted">Extrae comentarios de publicaciones</p>
     </header>
 
     <section class="card">
-      <h2>Configuración</h2>
-
-      <div class="field">
-        <label>Token de Apify</label>
-        <input id="apifyToken" placeholder="apify_api_..." />
-      </div>
-
-      <div class="field">
-        <label>URLs de publicaciones (una por línea)</label>
-        <textarea id="fbUrls"></textarea>
-      </div>
-
-      <div class="field">
-        <label>Límite de comentarios</label>
-        <input type="number" id="limit" placeholder="Ej: 200">
-      </div>
-
-      <button id="btnScrape" class="primary">Iniciar Scraper</button>
-
-      <div id="status"></div>
-      <div id="consoleOutput" style="white-space:pre; background:#111; color:#0f0; padding:10px; margin-top:10px; height:120px; overflow-y:auto;"></div>
+      <div id="status" style="margin-bottom:8px;"></div>
+      <div id="consoleOutput" style="white-space:pre; background:#111; color:#0f0; padding:10px; margin-top:10px; height:140px; overflow-y:auto;"></div>
     </section>
 
     <section class="card">
@@ -45,7 +26,7 @@
       <button id="btnRefresh">Refrescar</button>
       <button id="btnExportCSV">Exportar CSV</button>
 
-      <div class="table-wrapper">
+      <div class="table-wrapper" style="margin-top:10px;">
         <table id="commentsTable">
           <thead>
             <tr>
@@ -53,6 +34,7 @@
               <th>Usuario</th>
               <th>Comentario</th>
               <th>Likes</th>
+              <th>Link</th>
             </tr>
           </thead>
           <tbody></tbody>
