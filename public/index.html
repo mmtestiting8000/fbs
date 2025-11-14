@@ -1,53 +1,48 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Facebook Comment Scraper</title>
-    <style>
-        body { font-family: Arial; margin: 30px; background: #f4f4f4; }
-        .card { padding: 20px; background: white; border-radius: 8px; margin-bottom: 20px; }
-        textarea { width: 100%; height: 150px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #ccc; padding: 8px; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Facebook Comments Scraper</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
+
 <body>
+  <div class="container">
+    <h1>Facebook Comments Scraper</h1>
 
-<div class="card">
-    <h2>🔧 Configuración del Scraper</h2>
+    <form id="scrapeForm">
+      <label>API Token de Apify:</label>
+      <input type="text" id="token" required placeholder="Tu token de APIFY">
 
-    <label>API Token de Apify</label><br>
-    <input id="apiToken" style="width:100%;"><br><br>
+      <label>URL de Facebook:</label>
+      <input type="text" id="facebookUrl" required placeholder="https://facebook.com/...">
 
-    <label>URL del post de Facebook</label><br>
-    <input id="facebookUrl" style="width:100%;"><br><br>
+      <label>Número de comentarios:</label>
+      <input type="number" id="limit" required min="1" placeholder="Ej. 20">
 
-    <label>Número máximo de comentarios</label><br>
-    <input id="limitComments" type="number" value="50"><br><br>
+      <button type="submit">Scrapear Comentarios</button>
+    </form>
 
-    <button id="scrapeBtn">🚀 Iniciar Scrap</button>
-</div>
+    <div class="status" id="status"></div>
 
-<div class="card">
-    <h2>📜 Log</h2>
-    <textarea id="log"></textarea>
-</div>
+    <h2>Últimos comentarios obtenidos</h2>
 
-<div class="card">
-    <h2>🗂 Últimos comentarios</h2>
-
-    <table>
-        <thead>
-            <tr>
-                <th>Usuario</th>
-                <th>Comentario</th>
-                <th>Fecha</th>
-            </tr>
-        </thead>
-        <tbody id="comments-body"></tbody>
+    <table id="commentsTable">
+      <thead>
+        <tr>
+          <th>Título del Post</th>
+          <th>Comentario</th>
+          <th>Likes</th>
+          <th>URL</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
     </table>
-</div>
 
-<script src="app.js"></script>
+    <button id="downloadCsvBtn" class="hidden">Descargar CSV</button>
+  </div>
+
+  <script src="app.js"></script>
 </body>
 </html>
