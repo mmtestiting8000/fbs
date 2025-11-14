@@ -1,68 +1,55 @@
 body {
-  font-family: "Segoe UI", sans-serif;
+  font-family: Arial, sans-serif;
   background: #f3f4f6;
-  margin: 0;
-  padding: 0;
-  color: #333;
+  padding: 20px;
 }
 
 .container {
-  width: 90%;
   max-width: 900px;
-  margin: 40px auto;
-  background: #fff;
-  padding: 20px 30px;
-  border-radius: 12px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.1);
-}
-
-header, footer {
-  text-align: center;
-}
-
-h1 { margin-bottom: 5px; }
-
-.muted {
-  color: #777;
-  font-size: 0.9em;
+  margin: auto;
 }
 
 .card {
-  background: #fafafa;
-  border-radius: 8px;
+  background: white;
   padding: 20px;
   margin-top: 20px;
-  box-shadow: 0 0 4px rgba(0,0,0,0.05);
+  border-radius: 8px;
+  box-shadow: 0 2px 6px #0002;
 }
 
 .field {
   margin-bottom: 15px;
 }
 
-textarea, input {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  font-size: 1em;
+.field label {
+  font-weight: bold;
 }
 
-button {
-  background: #007bff;
+textarea, input {
+  width: 100%;
+  padding: 8px;
+  margin-top: 5px;
+}
+
+button.primary {
+  background: #2563eb;
   color: white;
+  padding: 10px 16px;
   border: none;
-  border-radius: 6px;
-  padding: 10px 20px;
+  border-radius: 5px;
   cursor: pointer;
 }
 
-button:hover {
-  background: #0056b3;
+#status {
+  margin-top: 10px;
+  padding: 10px;
+  background: #eef;
+  border-radius: 5px;
 }
 
 .table-wrapper {
-  overflow-x: auto;
-  margin-top: 10px;
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 table {
@@ -70,12 +57,12 @@ table {
   border-collapse: collapse;
 }
 
-table th, table td {
+table th {
+  background: #ddd;
   padding: 8px;
-  border-bottom: 1px solid #ddd;
 }
 
-.status {
-  margin-top: 10px;
-  font-weight: bold;
+table td {
+  padding: 6px;
+  border-bottom: 1px solid #eee;
 }
