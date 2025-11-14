@@ -1,163 +1,115 @@
-$(document).ready(function () {
-  // -----------------------------
-  //  CLIC: EJECUTAR SCRAPER
-  // -----------------------------
-  $("#btnScrape").on("click", async () => {
+$(function () {
+  const $status = $("#status");
+  const $tableBody = $("#commentsTable tbody");
+
+  function logStatus(msg, isError = false) {
+    $status.text(msg);
+    $status.toggleClass("error", isError);
+  }
+
+  // Botón para ejecutar scraping
+  $("#btnScrape").on("click", async function () {
     const token = $("#apifyToken").val().trim();
-    const fbUrlsRaw = $("#fbUrls").val().trim();
+    const url = $("#fbUrl").val().trim();
     const limit = $("#limit").val().trim();
 
-    const fbUrls = fbUrlsRaw
-      .split("\n")
-      .map((x) => x.trim())
-      .filter((x) => x.length > 0);
-
-    if (fbUrls.length === 0) {
-      showStatus("❌ Debes agregar al menos una URL de Facebook", true);
-      return;
+    if (!url) {
+      return logStatus("Debes ingresar una URL de Facebook", true);
     }
 
-    showStatus("⏳ Ejecutando scraper…");
+    logStatus("Iniciando scraping...");
 
     try {
-      const res = await fetch("/run", {
+      const res = await fetch("/api/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          token,
-          fbUrls,
-          limit: limit ? Number(limit) : undefined
+          fbUrl: url,
+          limit: limit || null,
+          apifyToken: token || null
         })
       });
 
       const data = await res.json();
 
-      if (data.error) {
-        showStatus("❌ " + data.error, true);
+      if (!res.ok) {
+        logStatus("Error: " + data.error, true);
         return;
       }
 
-      showStatus("✅ Scraping completado. Cargando tabla…");
-      loadComments(); 
+      logStatus(`Scraping completado. Comentarios importados: ${data.imported}`);
+      loadComments();
+
     } catch (err) {
-      showStatus("❌ Error enviando solicitud: " + err.message, true);
+      logStatus("Error en la petición: " + err.message, true);
     }
   });
 
-  // -----------------------------
-  //  CLIC: REFRESCAR TABLA
-  // -----------------------------
-  $("#btnRefresh").on("click", () => {
-    loadComments();
-  });
+  // Botón refrescar datos
+  $("#btnRefresh").on("click", loadComments);
 
-  // -----------------------------
-  //  CLIC: EXPORTAR CSV
-  // -----------------------------
-  $("#btnExportCSV").on("click", () => {
-    exportTableToCSV("comments_export.csv");
-  });
-
-  // -----------------------------
-  //  CARGAR COMENTARIOS GUARDADOS
-  // -----------------------------
+  // Cargar comentarios desde MongoDB
   async function loadComments() {
-    showStatus("⏳ Cargando datos…");
+    logStatus("Cargando comentarios...");
+    $tableBody.empty();
+
     try {
-      const res = await fetch("/comments");
+      const res = await fetch("/api/comments?limit=200");
       const data = await res.json();
 
-      if (!Array.isArray(data)) {
-        showStatus("❌ Respuesta inesperada del servidor", true);
+      if (!data.items || !Array.isArray(data.items)) {
+        logStatus("Sin datos disponibles");
         return;
       }
 
-      renderCommentsTable(data);
-      showStatus("✅ Datos cargados");
+      data.items.forEach(item => {
+        // El scraper que estás usando NO devuelve userName
+        const user = item.userName || item.user || "No disponible";
+
+        const text = item.text || item.commentText || "";
+        const likes = item.likesCount || item.reactionCount || 0;
+        const url = item.facebookUrl || item.url || "";
+        const postTitle = item.postTitle || "—";
+
+        const row = `
+          <tr>
+            <td>${user}</td>
+            <td>${text}</td>
+            <td>${likes}</td>
+            <td><a href="${url}" target="_blank">Abrir</a></td>
+            <td>${postTitle}</td>
+          </tr>
+        `;
+        $tableBody.append(row);
+      });
+
+      logStatus("Datos cargados");
     } catch (err) {
-      showStatus("❌ Error cargando comentarios: " + err.message, true);
+      logStatus("Error cargando comentarios: " + err.message, true);
     }
   }
 
-  // -----------------------------
-  //  RENDER DE LA TABLA
-  // -----------------------------
-  function renderCommentsTable(items) {
-    const tbody = $("#commentsTable tbody");
-    tbody.empty();
+  // Exportar CSV
+  $("#btnExportCSV").on("click", function () {
+    let csv = "Usuario,Comentario,Likes,URL,PostTitle\n";
 
-    if (!items || items.length === 0) {
-      tbody.append(`<tr><td colspan="4">Sin datos aún</td></tr>`);
-      return;
-    }
-
-    items.forEach((item) => {
-      const postUrl = item.postUrl || item.url || "-";
-
-      // Usuario (viene de name o de from.name)
-      const user =
-        item.name ||
-        (item.from && item.from.name) ||
-        "Desconocido";
-
-      // Comentario (text o message)
-      const comment =
-        item.text ||
-        item.message ||
-        "(sin texto)";
-
-      // Likes
-      const likes =
-        item.likeCount ??
-        item.reactions ??
-        0;
-
-      const row = `
-        <tr>
-          <td>${postUrl}</td>
-          <td>${user}</td>
-          <td>${comment}</td>
-          <td>${likes}</td>
-        </tr>
-      `;
-
-      tbody.append(row);
-    });
-  }
-
-  // -----------------------------
-  //  ESTADO / MENSAJES
-  // -----------------------------
-  function showStatus(message, isError = false) {
-    const el = $("#status");
-    el.text(message);
-    el.removeClass("error");
-
-    if (isError) el.addClass("error");
-  }
-
-  // -----------------------------
-  //  EXPORTAR CSV
-  // -----------------------------
-  function exportTableToCSV(filename) {
-    const rows = document.querySelectorAll("table tr");
-    let csv = [];
-
-    rows.forEach((row) => {
-      const cols = [...row.querySelectorAll("td, th")].map((col) =>
-        `"${col.innerText.replace(/"/g, '""')}"`
-      );
-      csv.push(cols.join(","));
+    $("#commentsTable tbody tr").each(function () {
+      const cols = $(this).find("td").map(function () {
+        return '"' + $(this).text().replace(/"/g, '""') + '"';
+      }).get();
+      csv += cols.join(",") + "\n";
     });
 
-    const blob = new Blob([csv.join("\n")], { type: "text/csv" });
-    const link = document.createElement("a");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
 
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
-  }
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "comentarios.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 
-  // Cargar tabla apenas abra la página
+  // Cargar datos al inicio
   loadComments();
 });
