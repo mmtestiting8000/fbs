@@ -1,92 +1,163 @@
-function log(msg) {
-  $("#consoleOutput").append(msg + "\n");
-}
+$(document).ready(function () {
+  // -----------------------------
+  //  CLIC: EJECUTAR SCRAPER
+  // -----------------------------
+  $("#btnScrape").on("click", async () => {
+    const token = $("#apifyToken").val().trim();
+    const fbUrlsRaw = $("#fbUrls").val().trim();
+    const limit = $("#limit").val().trim();
 
-$("#btnScrape").click(async () => {
-  $("#status").text("Ejecutando scraper...");
-  log("Enviando petición /run");
+    const fbUrls = fbUrlsRaw
+      .split("\n")
+      .map((x) => x.trim())
+      .filter((x) => x.length > 0);
 
-  const token = $("#apifyToken").val().trim();
-  const fbUrls = $("#fbUrls").val().split("\n").map(s => s.trim()).filter(s => s);
-  const limit = $("#limit").val();
-
-  try {
-    const res = await fetch("/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fbUrls, limit, token })
-    });
-
-    const json = await res.json();
-    log("Respuesta /run: " + JSON.stringify(json, null, 2));
-
-    if (!json.success) {
-      $("#status").text("Error: " + json.error);
+    if (fbUrls.length === 0) {
+      showStatus("❌ Debes agregar al menos una URL de Facebook", true);
       return;
     }
 
-    $("#status").text("Scraper finalizado. Guardando datos...");
+    showStatus("⏳ Ejecutando scraper…");
 
-    await fetch("/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: json.data })
+    try {
+      const res = await fetch("/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          fbUrls,
+          limit: limit ? Number(limit) : undefined
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        showStatus("❌ " + data.error, true);
+        return;
+      }
+
+      showStatus("✅ Scraping completado. Cargando tabla…");
+      loadComments(); 
+    } catch (err) {
+      showStatus("❌ Error enviando solicitud: " + err.message, true);
+    }
+  });
+
+  // -----------------------------
+  //  CLIC: REFRESCAR TABLA
+  // -----------------------------
+  $("#btnRefresh").on("click", () => {
+    loadComments();
+  });
+
+  // -----------------------------
+  //  CLIC: EXPORTAR CSV
+  // -----------------------------
+  $("#btnExportCSV").on("click", () => {
+    exportTableToCSV("comments_export.csv");
+  });
+
+  // -----------------------------
+  //  CARGAR COMENTARIOS GUARDADOS
+  // -----------------------------
+  async function loadComments() {
+    showStatus("⏳ Cargando datos…");
+    try {
+      const res = await fetch("/comments");
+      const data = await res.json();
+
+      if (!Array.isArray(data)) {
+        showStatus("❌ Respuesta inesperada del servidor", true);
+        return;
+      }
+
+      renderCommentsTable(data);
+      showStatus("✅ Datos cargados");
+    } catch (err) {
+      showStatus("❌ Error cargando comentarios: " + err.message, true);
+    }
+  }
+
+  // -----------------------------
+  //  RENDER DE LA TABLA
+  // -----------------------------
+  function renderCommentsTable(items) {
+    const tbody = $("#commentsTable tbody");
+    tbody.empty();
+
+    if (!items || items.length === 0) {
+      tbody.append(`<tr><td colspan="4">Sin datos aún</td></tr>`);
+      return;
+    }
+
+    items.forEach((item) => {
+      const postUrl = item.postUrl || item.url || "-";
+
+      // Usuario (viene de name o de from.name)
+      const user =
+        item.name ||
+        (item.from && item.from.name) ||
+        "Desconocido";
+
+      // Comentario (text o message)
+      const comment =
+        item.text ||
+        item.message ||
+        "(sin texto)";
+
+      // Likes
+      const likes =
+        item.likeCount ??
+        item.reactions ??
+        0;
+
+      const row = `
+        <tr>
+          <td>${postUrl}</td>
+          <td>${user}</td>
+          <td>${comment}</td>
+          <td>${likes}</td>
+        </tr>
+      `;
+
+      tbody.append(row);
+    });
+  }
+
+  // -----------------------------
+  //  ESTADO / MENSAJES
+  // -----------------------------
+  function showStatus(message, isError = false) {
+    const el = $("#status");
+    el.text(message);
+    el.removeClass("error");
+
+    if (isError) el.addClass("error");
+  }
+
+  // -----------------------------
+  //  EXPORTAR CSV
+  // -----------------------------
+  function exportTableToCSV(filename) {
+    const rows = document.querySelectorAll("table tr");
+    let csv = [];
+
+    rows.forEach((row) => {
+      const cols = [...row.querySelectorAll("td, th")].map((col) =>
+        `"${col.innerText.replace(/"/g, '""')}"`
+      );
+      csv.push(cols.join(","));
     });
 
-    $("#status").text("Datos guardados.");
-    loadComments();
+    const blob = new Blob([csv.join("\n")], { type: "text/csv" });
+    const link = document.createElement("a");
 
-  } catch (err) {
-    $("#status").text("Error: " + err.message);
-    log("ERROR: " + err.message);
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
   }
+
+  // Cargar tabla apenas abra la página
+  loadComments();
 });
-
-
-async function loadComments() {
-  const res = await fetch("/comments");
-  const json = await res.json();
-
-  const tbody = $("#commentsTable tbody");
-  tbody.empty();
-
-  json.data.forEach(c => {
-    tbody.append(`
-      <tr>
-        <td>${c.postUrl || ""}</td>
-        <td>${c.userName || ""}</td>
-        <td>${c.text || ""}</td>
-        <td>${c.likes || 0}</td>
-      </tr>
-    `);
-  });
-}
-
-$("#btnRefresh").click(loadComments);
-
-
-// --------------------------------------------------
-// EXPORTAR CSV
-// --------------------------------------------------
-$("#btnExportCSV").click(() => {
-  const rows = [];
-  $("#commentsTable tr").each(function () {
-    const cols = $(this).find("td,th").map(function () {
-      return `"${$(this).text().replace(/"/g, '""')}"`;
-    }).get();
-    rows.push(cols.join(","));
-  });
-
-  const csv = rows.join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "comments.csv";
-  a.click();
-});
-
-
-// Cargar al inicio
-loadComments();
