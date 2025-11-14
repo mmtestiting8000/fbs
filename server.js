@@ -30,10 +30,10 @@ startDb().catch(err => {
   console.error('❌ Error conectando a Mongo:', err);
 });
 
-// 🔹 Lanza el actor oficial de Apify
-async function startApifyRun(token, fbUrl, limit) {
+// 🔹 Lanza actor oficial de Apify
+async function startApifyRun(token, fbUrls, limit) {
   const url = `https://api.apify.com/v2/acts/apify~facebook-comments-scraper/runs?token=${token}`;
-  const input = { fbUrls: [fbUrl] };
+  const input = { fbUrls };
   if (limit) input.maxComments = parseInt(limit);
 
   const res = await axios.post(url, input, { headers: { 'Content-Type': 'application/json' } });
@@ -41,25 +41,21 @@ async function startApifyRun(token, fbUrl, limit) {
   return res.data.data.id;
 }
 
-// 🔹 Espera la ejecución y obtiene dataset
+// 🔹 Espera a que termine
 async function waitForRunToFinish(token, runId) {
   const statusUrl = `https://api.apify.com/v2/actor-runs/${runId}?token=${token}`;
   while (true) {
     const res = await axios.get(statusUrl);
     const status = res.data.data.status;
     console.log('Apify run status:', status);
-
-    if (status === 'SUCCEEDED') {
-      return res.data.data.defaultDatasetId;
-    }
-    if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(status)) {
+    if (status === 'SUCCEEDED') return res.data.data.defaultDatasetId;
+    if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(status))
       throw new Error('La ejecución falló: ' + status);
-    }
     await new Promise(r => setTimeout(r, 5000));
   }
 }
 
-// 🔹 Obtiene los comentarios del dataset
+// 🔹 Descarga los comentarios
 async function fetchComments(token, datasetId) {
   const res = await axios.get(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}&clean=true`);
   return res.data;
@@ -67,14 +63,15 @@ async function fetchComments(token, datasetId) {
 
 // 🔹 Endpoint principal
 app.post('/api/scrape', async (req, res) => {
-  const { fbUrl, limit, apifyToken } = req.body;
+  const { fbUrls, limit, apifyToken } = req.body;
   const token = apifyToken || DEFAULT_APIFY_TOKEN;
 
   if (!token) return res.status(400).json({ error: 'Falta token de Apify' });
-  if (!fbUrl) return res.status(400).json({ error: 'fbUrl requerido' });
+  if (!fbUrls || !Array.isArray(fbUrls) || fbUrls.length === 0)
+    return res.status(400).json({ error: 'fbUrls requerido como array de URLs' });
 
   try {
-    const runId = await startApifyRun(token, fbUrl, limit);
+    const runId = await startApifyRun(token, fbUrls, limit);
     const datasetId = await waitForRunToFinish(token, runId);
     const comments = await fetchComments(token, datasetId);
 
@@ -94,7 +91,7 @@ app.post('/api/scrape', async (req, res) => {
   }
 });
 
-// 🔹 Endpoint para listar comentarios
+// 🔹 Listar comentarios
 app.get('/api/comments', async (req, res) => {
   const limit = Math.min(100, parseInt(req.query.limit || '50', 10));
   const page = Math.max(0, parseInt(req.query.page || '0', 10));
