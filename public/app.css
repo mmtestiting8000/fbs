@@ -1,68 +1,75 @@
 body {
   font-family: Arial, sans-serif;
-  background: #f3f4f6;
-  padding: 20px;
+  background: #f6f6f6;
+  margin: 0;
+  padding: 0;
 }
 
 .container {
   max-width: 900px;
-  margin: auto;
-}
-
-.card {
+  margin: 40px auto;
   background: white;
-  padding: 20px;
-  margin-top: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 6px #0002;
+  padding: 25px;
+  border-radius: 10px;
+  box-shadow: 0 0 10px #0002;
 }
 
-.field {
-  margin-bottom: 15px;
+h1, h2 {
+  text-align: center;
 }
 
-.field label {
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+input {
+  padding: 10px;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  font-size: 16px;
+}
+
+button {
+  padding: 12px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+button:hover {
+  background: #0056c7;
+}
+
+.status {
+  text-align: center;
+  padding: 10px;
+  margin-bottom: 20px;
   font-weight: bold;
 }
 
-textarea, input {
-  width: 100%;
-  padding: 8px;
-  margin-top: 5px;
-}
-
-button.primary {
-  background: #2563eb;
-  color: white;
-  padding: 10px 16px;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-#status {
-  margin-top: 10px;
-  padding: 10px;
-  background: #eef;
-  border-radius: 5px;
-}
-
-.table-wrapper {
-  max-height: 400px;
-  overflow-y: auto;
+.hidden {
+  display: none;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
+  margin-top: 15px;
+  background: #fff;
+}
+
+table th, table td {
+  padding: 12px;
+  border-bottom: 1px solid #ddd;
 }
 
 table th {
-  background: #ddd;
-  padding: 8px;
-}
-
-table td {
-  padding: 6px;
-  border-bottom: 1px solid #eee;
+  background: #007bff;
+  color: white;
 }
