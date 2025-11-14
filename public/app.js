@@ -1,68 +1,67 @@
-function log(msg) {
-    const logBox = document.getElementById("log");
-    logBox.value += msg + "\n";
-    logBox.scrollTop = logBox.scrollHeight;
-}
+document.getElementById("scrapeForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-async function loadComments() {
-    const res = await fetch("/comments");
-    const data = await res.json();
-    renderRows(data);
-}
+    const token = document.getElementById("token").value;
+    const facebookUrl = document.getElementById("facebookUrl").value;
+    const limit = document.getElementById("limit").value;
 
-function renderRows(rows) {
-    const body = document.getElementById("comments-body");
-    body.innerHTML = "";
+    const statusBox = document.getElementById("status");
+    statusBox.innerText = "⏳ Ejecutando scraper...";
+    statusBox.style.color = "black";
 
-    rows.forEach(r => {
-        body.innerHTML += `
+    try {
+        const response = await fetch("/api/run-scraper", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, facebookUrl, limit })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            statusBox.innerText = "❌ Error: " + data.error;
+            statusBox.style.color = "red";
+            return;
+        }
+
+        statusBox.innerText = "✔ Datos obtenidos correctamente";
+        statusBox.style.color = "green";
+
+        renderTable(data.comments);
+
+        document.getElementById("downloadCsvBtn").classList.remove("hidden");
+
+    } catch (err) {
+        statusBox.innerText = "❌ Error al conectar con el servidor";
+        statusBox.style.color = "red";
+    }
+});
+
+function renderTable(comments) {
+    const tbody = document.querySelector("#commentsTable tbody");
+    tbody.innerHTML = "";
+
+    comments.forEach(c => {
+        const row = `
             <tr>
-                <td>${r.postTitle}</td>
-                <td>${r.text}</td>
-                <td>${r.likesCount}</td>
-                <td>${r.facebookUrl}</td>
+                <td>${c.postTitle}</td>
+                <td>${c.text}</td>
+                <td>${c.likesCount}</td>
+                <td><a href="${c.facebookUrl}" target="_blank">Ver</a></td>
             </tr>
         `;
+        tbody.innerHTML += row;
     });
 }
 
-document.getElementById("scrapeBtn").onclick = async () => {
-    const apiToken = apiToken.value;
-    const facebookUrl = facebookUrl.value;
-    const limitComments = limitComments.value;
+// Descargar CSV
+document.getElementById("downloadCsvBtn").addEventListener("click", async () => {
+    const response = await fetch("/api/export-csv");
+    const blob = await response.blob();
 
-    log("Scrape iniciado...");
-
-    const res = await fetch("/scrape", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiToken, facebookUrl, limitComments })
-    });
-
-    const data = await res.json();
-
-    if (!data.ok) return log("Error: " + data.error);
-
-    renderRows(data.data);
-    log("Scrape completado.");
-};
-
-document.getElementById("exportCsv").onclick = () => {
-    const rows = [...document.querySelectorAll("#comments-body tr")];
-    let csv = "postTitle,text,likesCount,facebookUrl\n";
-
-    rows.forEach(row => {
-        const cols = [...row.children].map(c => `"${c.innerText}"`).join(",");
-        csv += cols + "\n";
-    });
-
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-
+    const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = "comments.csv";
     a.click();
-};
-
-loadComments();
+});
