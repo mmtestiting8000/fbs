@@ -1,67 +1,53 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Facebook Comments Scraper UI</title>
-  <link rel="stylesheet" href="app.css">
-  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <meta charset="UTF-8">
+    <title>Facebook Comment Scraper</title>
+    <style>
+        body { font-family: Arial; margin: 30px; background: #f4f4f4; }
+        .card { padding: 20px; background: white; border-radius: 8px; margin-bottom: 20px; }
+        textarea { width: 100%; height: 150px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ccc; padding: 8px; }
+    </style>
 </head>
 <body>
-  <div class="container">
 
-    <header>
-      <h1>Facebook Comments Scraper</h1>
-      <p class="muted">Extrae comentarios de publicaciones</p>
-    </header>
+<div class="card">
+    <h2>🔧 Configuración del Scraper</h2>
 
-    <section class="card">
-      <h2>Configuración</h2>
+    <label>API Token de Apify</label><br>
+    <input id="apiToken" style="width:100%;"><br><br>
 
-      <div class="field">
-        <label>Token de Apify</label>
-        <input id="apifyToken" placeholder="apify_api_..." />
-      </div>
+    <label>URL del post de Facebook</label><br>
+    <input id="facebookUrl" style="width:100%;"><br><br>
 
-      <div class="field">
-        <label>URLs de publicaciones (una por línea)</label>
-        <textarea id="fbUrls"></textarea>
-      </div>
+    <label>Número máximo de comentarios</label><br>
+    <input id="limitComments" type="number" value="50"><br><br>
 
-      <div class="field">
-        <label>Límite de comentarios</label>
-        <input type="number" id="limit" placeholder="Ej: 200">
-      </div>
+    <button id="scrapeBtn">🚀 Iniciar Scrap</button>
+</div>
 
-      <button id="btnScrape" class="primary">Iniciar Scraper</button>
+<div class="card">
+    <h2>📜 Log</h2>
+    <textarea id="log"></textarea>
+</div>
 
-      <div id="status"></div>
-      <div id="consoleOutput" style="white-space:pre; background:#111; color:#0f0; padding:10px; margin-top:10px; height:120px; overflow-y:auto;"></div>
-    </section>
+<div class="card">
+    <h2>🗂 Últimos comentarios</h2>
 
-    <section class="card">
-      <h2>Últimos comentarios</h2>
-
-      <button id="btnRefresh">Refrescar</button>
-      <button id="btnExportCSV">Exportar CSV</button>
-
-      <div class="table-wrapper">
-        <table id="commentsTable">
-          <thead>
+    <table>
+        <thead>
             <tr>
-              <th>Post</th>
-              <th>Usuario</th>
-              <th>Comentario</th>
-              <th>Likes</th>
-              <th>URL</th>
+                <th>Usuario</th>
+                <th>Comentario</th>
+                <th>Fecha</th>
             </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
+        </thead>
+        <tbody id="comments-body"></tbody>
+    </table>
+</div>
 
-  </div>
-  <script src="app.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
