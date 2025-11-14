@@ -1,66 +1,47 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Facebook Comments Scraper UI</title>
-  <link rel="stylesheet" href="app.css">
-  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <meta charset="UTF-8">
+    <title>Comentarios Facebook – Vista</title>
+    <style>
+        body {
+            background: #f5f5f5;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .comment {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        .title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+        .meta {
+            font-size: 14px;
+            color: #666;
+            margin-top: 4px;
+        }
+        .likes {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #0077cc;
+        }
+        a {
+            color: #0077cc;
+        }
+    </style>
 </head>
 <body>
-  <div class="container">
 
-    <header>
-      <h1>Facebook Comments Scraper</h1>
-      <p class="muted">Extrae comentarios de publicaciones</p>
-    </header>
+    <h1>Últimos comentarios</h1>
 
-    <section class="card">
-      <h2>Configuración</h2>
+    <div id="comments"></div>
 
-      <div class="field">
-        <label>Token de Apify</label>
-        <input id="apifyToken" placeholder="apify_api_..." />
-      </div>
-
-      <div class="field">
-        <label>URLs de publicaciones (una por línea)</label>
-        <textarea id="fbUrls"></textarea>
-      </div>
-
-      <div class="field">
-        <label>Límite de comentarios</label>
-        <input type="number" id="limit" placeholder="Ej: 200">
-      </div>
-
-      <button id="btnScrape" class="primary">Iniciar Scraper</button>
-
-      <div id="status"></div>
-      <div id="consoleOutput" style="white-space:pre; background:#111; color:#0f0; padding:10px; margin-top:10px; height:120px; overflow-y:auto;"></div>
-    </section>
-
-    <section class="card">
-      <h2>Comentarios guardados</h2>
-
-      <button id="btnRefresh">Refrescar</button>
-      <button id="btnExportCSV">Exportar CSV</button>
-
-      <div class="table-wrapper">
-        <table id="commentsTable">
-          <thead>
-            <tr>
-              <th>Post</th>
-              <th>Usuario</th>
-              <th>Comentario</th>
-              <th>Likes</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-
-  </div>
-  <script src="app.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
