@@ -1,88 +1,68 @@
-// app.js
-
 function log(msg) {
-    const box = document.getElementById("log");
-    box.value += msg + "\n";
-    box.scrollTop = box.scrollHeight;
+    const logBox = document.getElementById("log");
+    logBox.value += msg + "\n";
+    logBox.scrollTop = logBox.scrollHeight;
 }
 
-// ---------------------------------------------
-// Cargar últimos comentarios desde backend
-// ---------------------------------------------
 async function loadComments() {
-    log("⏳ Cargando últimos comentarios...");
-
-    try {
-        const res = await fetch("/comments");
-        const data = await res.json();
-
-        if (!data || data.length === 0) {
-            log("ℹ No hay comentarios guardados.");
-            document.querySelector("#comments-body").innerHTML =
-                `<tr><td colspan="3">Sin datos</td></tr>`;
-            return;
-        }
-
-        renderTable(data);
-        log("✅ Comentarios cargados.");
-    } catch (err) {
-        console.error(err);
-        log("❌ Error obteniendo comentarios.");
-    }
+    const res = await fetch("/comments");
+    const data = await res.json();
+    renderRows(data);
 }
 
-function renderTable(rows) {
-    const body = document.querySelector("#comments-body");
+function renderRows(rows) {
+    const body = document.getElementById("comments-body");
     body.innerHTML = "";
 
-    rows.forEach(c => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-            <td>${c.fromName || "-"}</td>
-            <td>${c.text || "-"}</td>
-            <td>${c.publishedAt || "-"}</td>
+    rows.forEach(r => {
+        body.innerHTML += `
+            <tr>
+                <td>${r.postTitle}</td>
+                <td>${r.text}</td>
+                <td>${r.likesCount}</td>
+                <td>${r.facebookUrl}</td>
+            </tr>
         `;
-        body.appendChild(tr);
     });
 }
 
-// ---------------------------------------------
-// Ejecutar scrap
-// ---------------------------------------------
-document.querySelector("#scrapeBtn").addEventListener("click", async () => {
-    const apiToken = document.querySelector("#apiToken").value;
-    const facebookUrl = document.querySelector("#facebookUrl").value;
-    const limitComments = document.querySelector("#limitComments").value;
+document.getElementById("scrapeBtn").onclick = async () => {
+    const apiToken = apiToken.value;
+    const facebookUrl = facebookUrl.value;
+    const limitComments = limitComments.value;
 
-    if (!apiToken || !facebookUrl) {
-        log("⚠ Llene todos los campos.");
-        return;
-    }
+    log("Scrape iniciado...");
 
-    log("🚀 Iniciando scrape...");
+    const res = await fetch("/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiToken, facebookUrl, limitComments })
+    });
 
-    try {
-        const res = await fetch("/scrape", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ apiToken, facebookUrl, limitComments })
-        });
+    const data = await res.json();
 
-        const data = await res.json();
+    if (!data.ok) return log("Error: " + data.error);
 
-        if (!data.ok) {
-            log("❌ Error: " + data.error);
-            return;
-        }
+    renderRows(data.data);
+    log("Scrape completado.");
+};
 
-        log("📥 Scrap completado. Actualizando tabla...");
+document.getElementById("exportCsv").onclick = () => {
+    const rows = [...document.querySelectorAll("#comments-body tr")];
+    let csv = "postTitle,text,likesCount,facebookUrl\n";
 
-        renderTable(data.data);
-    } catch (err) {
-        console.error(err);
-        log("❌ Error ejecutando scrape.");
-    }
-});
+    rows.forEach(row => {
+        const cols = [...row.children].map(c => `"${c.innerText}"`).join(",");
+        csv += cols + "\n";
+    });
 
-// Inicial
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "comments.csv";
+    a.click();
+};
+
 loadComments();
