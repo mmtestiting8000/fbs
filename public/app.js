@@ -1,105 +1,111 @@
-document.getElementById("runBtn").addEventListener("click", async () => {
-    const apiToken = document.getElementById("apiToken").value.trim();
-    const fbUrlsRaw = document.getElementById("fbUrls").value.trim();
+$(document).ready(() => {
 
-    if (!apiToken) {
-        alert("Por favor ingresa tu API Token.");
-        return;
+    function log(msg) {
+        $("#consoleOutput").append(msg + "\n");
+        $("#consoleOutput").scrollTop($("#consoleOutput")[0].scrollHeight);
     }
 
-    if (!fbUrlsRaw) {
-        alert("Por favor ingresa al menos una URL de Facebook.");
-        return;
-    }
+    // Ejecutar scraper
+    $("#btnScrape").click(async () => {
 
-    const fbUrls = fbUrlsRaw.split("\n").map(u => u.trim()).filter(Boolean);
+        const token = $("#apifyToken").val().trim();
+        const urls = $("#fbUrls").val().trim().split("\n").filter(x => x);
+        const limit = $("#limit").val().trim();
 
-    console.log("Enviando petición /run");
-
-    try {
-        const response = await fetch("/run", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                apiToken,
-                startUrls: fbUrls
-            })
-        });
-
-        const data = await response.json();
-
-        console.log("Respuesta /run:", data);
-
-        if (data.error) {
-            alert("Error: " + JSON.stringify(data.error));
+        if (!urls.length) {
+            alert("Debes ingresar al menos 1 URL.");
             return;
         }
 
-        if (!Array.isArray(data)) {
-            alert("La API no devolvió una lista válida.");
-            return;
+        $("#status").text("Ejecutando scraper...");
+        log("=== Enviando petición al backend ===");
+
+        try {
+            const res = await fetch("/run", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    token,
+                    fbUrls: urls,
+                    limit: limit ? Number(limit) : undefined
+                })
+            });
+
+            const data = await res.json();
+            log("Respuesta /run:\n" + JSON.stringify(data, null, 2));
+
+            if (data.error) {
+                $("#status").text("Error: " + data.error.message);
+                return;
+            }
+
+            $("#status").text("Scraper completado.");
+            loadComments();
+
+        } catch (e) {
+            log("ERROR:\n" + e);
+            $("#status").text("Error ejecutando scraper.");
         }
-
-        renderTable(data);
-
-    } catch (err) {
-        console.error(err);
-        alert("Error: " + err);
-    }
-});
-
-
-// ---------------------------------------------
-//   GENERAR TABLA DE RESULTADOS CORRECTA
-// ---------------------------------------------
-function renderTable(data) {
-    const tableContainer = document.getElementById("resultsTable");
-    tableContainer.innerHTML = "";
-
-    if (data.length === 0) {
-        tableContainer.innerHTML = "<p>No se encontraron datos.</p>";
-        return;
-    }
-
-    const table = document.createElement("table");
-    table.classList.add("data-table");
-
-    const header = document.createElement("tr");
-    header.innerHTML = `
-        <th>Título del Post</th>
-        <th>Comentario</th>
-        <th>Likes</th>
-        <th>URL</th>
-    `;
-    table.appendChild(header);
-
-    data.forEach(item => {
-        const row = document.createElement("tr");
-
-        const postTitle = item.postTitle || "";
-        const text = item.text || "";
-        const likes = item.likesCount || "0";
-        const url = item.facebookUrl || "";
-
-        row.innerHTML = `
-            <td>${sanitize(postTitle)}</td>
-            <td>${sanitize(text)}</td>
-            <td>${sanitize(likes)}</td>
-            <td><a href="${url}" target="_blank">Abrir</a></td>
-        `;
-
-        table.appendChild(row);
     });
 
-    tableContainer.appendChild(table);
-}
+    // Obtener datos almacenados
+    async function loadComments() {
+        try {
+            const res = await fetch("/data");
+            const list = await res.json();
 
+            const tbody = $("#commentsTable tbody");
+            tbody.empty();
 
-// ---------------------------------------------
-//   LIMPIAR HTML INYECTADO
-// ---------------------------------------------
-function sanitize(str) {
-    return String(str)
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-}
+            list.forEach(item => {
+
+                const user = item.authorName || "Usuario desconocido";
+                const text = item.text || "";
+                const likes = item.likesCount ?? 0;
+                const post = item.postTitle || "(Sin título)";
+                const postUrl = item.facebookUrl || "";
+
+                const row = `
+                    <tr>
+                        <td><a href="${postUrl}" target="_blank">${post.substring(0, 50)}...</a></td>
+                        <td>${user}</td>
+                        <td>${text}</td>
+                        <td>${likes}</td>
+                    </tr>
+                `;
+
+                tbody.append(row);
+            });
+
+            log("Tabla actualizada con " + list.length + " registros.");
+        } catch (err) {
+            log("Error cargando datos:\n" + err);
+        }
+    }
+
+    $("#btnRefresh").click(loadComments);
+
+    // Exportar CSV
+    $("#btnExportCSV").click(() => {
+        const rows = [["Post", "Usuario", "Comentario", "Likes"]];
+
+        $("#commentsTable tbody tr").each(function () {
+            const cols = $(this).find("td").map(function () {
+                return $(this).text().replace(/\n/g, " ");
+            }).get();
+            rows.push(cols);
+        });
+
+        const csv = rows.map(r => r.join(",")).join("\n");
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "comments.csv";
+        a.click();
+    });
+
+    // Carga inicial
+    loadComments();
+});
