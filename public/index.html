@@ -1,47 +1,67 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FB Scraper UI</title>
-    <link rel="stylesheet" href="styles.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Facebook Comments Scraper UI</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 </head>
 <body>
+  <div class="container">
 
-<h2>Iniciar Scraper</h2>
+    <header>
+      <h1>Facebook Comments Scraper</h1>
+      <p class="muted">Extrae comentarios de publicaciones</p>
+    </header>
 
-<div class="form-box">
-    <label>Token de Apify:</label>
-    <input id="apiToken" type="text" placeholder="Apify API Token">
+    <section class="card">
+      <h2>Configuración</h2>
 
-    <label>URL del Facebook Post:</label>
-    <input id="facebookUrl" type="text" placeholder="https://www.facebook.com/...">
+      <div class="field">
+        <label>Token de Apify</label>
+        <input id="apifyToken" placeholder="apify_api_..." />
+      </div>
 
-    <label>Número máximo de comentarios:</label>
-    <input id="maxComments" type="number" value="50">
+      <div class="field">
+        <label>URLs de publicaciones (una por línea)</label>
+        <textarea id="fbUrls"></textarea>
+      </div>
 
-    <button id="runScraperBtn">Iniciar Scraper</button>
-</div>
+      <div class="field">
+        <label>Límite de comentarios</label>
+        <input type="number" id="limit" placeholder="Ej: 200">
+      </div>
 
-<hr>
+      <button id="btnScrape" class="primary">Iniciar Scraper</button>
 
-<h2>Log</h2>
-<pre id="logBox">Esperando acciones...</pre>
+      <div id="status"></div>
+      <div id="consoleOutput" style="white-space:pre; background:#111; color:#0f0; padding:10px; margin-top:10px; height:120px; overflow-y:auto;"></div>
+    </section>
 
-<hr>
+    <section class="card">
+      <h2>Últimos comentarios</h2>
 
-<h2>Últimos comentarios</h2>
-<table id="commentsTable">
-    <thead>
-        <tr>
-            <th>Nombre</th>
-            <th>Comentario</th>
-            <th>Fecha</th>
-        </tr>
-    </thead>
-    <tbody></tbody>
-</table>
+      <button id="btnRefresh">Refrescar</button>
+      <button id="btnExportCSV">Exportar CSV</button>
 
-<script src="app.js"></script>
+      <div class="table-wrapper">
+        <table id="commentsTable">
+          <thead>
+            <tr>
+              <th>Post</th>
+              <th>Usuario</th>
+              <th>Comentario</th>
+              <th>Likes</th>
+              <th>URL</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+  <script src="app.js"></script>
 </body>
 </html>
