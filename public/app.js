@@ -1,51 +1,83 @@
-const API_URL = "http://localhost:3000/api/v1/comments"; 
-// Ajusta si tu backend usa otra ruta
+$(document).ready(function () {
 
-async function loadComments() {
-    try {
-        const res = await fetch(API_URL);
-        const data = await res.json();
+    function appendConsole(msg) {
+        $("#consoleOutput").append(msg + "\n");
+        $("#consoleOutput").scrollTop($("#consoleOutput")[0].scrollHeight);
+    }
 
-        console.log("Datos recibidos desde la API:", data);
+    // ---------------------- LOAD LAST BATCH ----------------------
+    function loadComments() {
+        $.get("/comments", function (data) {
+            const tbody = $("#commentsTable tbody");
+            tbody.empty();
 
-        const container = document.getElementById("comments");
-        container.innerHTML = "";
+            data.forEach(c => {
+                const row = `
+                    <tr>
+                        <td>${c.postTitle || ""}</td>
+                        <td>${c.authorName || "Desconocido"}</td>
+                        <td>${c.text}</td>
+                        <td>${c.likesCount || 0}</td>
+                    </tr>
+                `;
+                tbody.append(row);
+            });
+        });
+    }
+    $("#btnRefresh").click(loadComments);
 
-        if (!Array.isArray(data) || data.length === 0) {
-            container.innerHTML = "<p>No hay comentarios disponibles.</p>";
-            return;
-        }
+    // ---------------------- EXPORT CSV ----------------------
+    $("#btnExportCSV").click(function () {
+        $.get("/comments", function (data) {
 
-        data.forEach(item => {
-            const div = document.createElement("div");
-            div.classList.add("comment");
+            let csv = "Post,Usuario,Comentario,Likes\n";
 
-            const author = item.authorName ?? "Usuario desconocido";
-            const text = item.commentText ?? "(sin texto)";
-            const likes = item.likeCounter ?? 0;
-            const postTitle = item.postTitle ?? "Sin título";
-            const postUrl = item.facebookUrl ?? "#";
+            data.forEach(c => {
+                csv += `"${c.postTitle}","${c.authorName}","${c.text}","${c.likesCount}"\n`;
+            });
 
-            div.innerHTML = `
-                <div class="title">${postTitle}</div>
-                <div class="meta">
-                    <strong>${author}</strong> comentó:
-                </div>
-                <p>${text}</p>
-                <div class="likes">❤️ Likes: <strong>${likes}</strong></div>
-                <div class="meta">
-                    <a href="${postUrl}" target="_blank">Ver publicación en Facebook</a>
-                </div>
-            `;
+            const blob = new Blob([csv], { type: "text/csv" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "comments.csv";
+            a.click();
+        });
+    });
 
-            container.appendChild(div);
+    // ---------------------- RUN SCRAPER ----------------------
+    $("#btnScrape").click(function () {
+
+        const token = $("#apifyToken").val().trim();
+        const urls = $("#fbUrls").val().split("\n").map(u => u.trim()).filter(u => u);
+        const limit = $("#limit").val();
+
+        appendConsole("Ejecutando scraper...");
+
+        $.ajax({
+            url: "/run-scraper",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({ token, urls, limit }),
+            success: function (res) {
+
+                appendConsole("Scraper completado. Guardando en Mongo...");
+
+                $.ajax({
+                    url: "/save-comments",
+                    method: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify({ comments: res.comments }),
+                    success: function () {
+                        appendConsole("Datos guardados ✔");
+                        loadComments();
+                    }
+                });
+            }
         });
 
-    } catch (error) {
-        console.error("Error cargando comentarios:", error);
-        document.getElementById("comments").innerHTML =
-            "<p>Error consultando la API.</p>";
-    }
-}
+    });
 
-loadComments();
+    // initial load
+    loadComments();
+
+});
