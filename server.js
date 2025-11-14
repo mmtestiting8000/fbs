@@ -4,6 +4,8 @@ import cors from "cors";
 import fetch from "node-fetch";
 import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
 
@@ -11,52 +13,46 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Obtener __dirname en ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // -----------------------------
 // MongoDB SETUP
 // -----------------------------
 const mongoUri = process.env.MONGO_URI;
-
 let db = null;
 
 async function connectDB() {
-    console.log("🔌 Intentando conectar a MongoDB...");
-
-    if (!mongoUri) {
-        console.error("❌ ERROR: MONGO_URI no está definida.");
-        return;
-    }
+    console.log("🔌 Conectando a MongoDB...");
 
     try {
-        const client = new MongoClient(mongoUri);
+        if (!mongoUri) {
+            console.error("❌ ERROR: MONGO_URI no está definida!");
+            return;
+        }
 
-        // timeout de 8s para evitar freeze
-        await Promise.race([
-            client.connect(),
-            new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Timeout conectando a MongoDB")), 8000)
-            )
-        ]);
+        const client = new MongoClient(mongoUri, {
+            serverSelectionTimeoutMS: 5000
+        });
 
+        await client.connect();
         db = client.db("fb_scraper");
+
         console.log("✅ MongoDB conectado");
     } catch (err) {
-        console.error("❌ Falló conexión MongoDB:", err);
+        console.error("❌ Error conectando a Mongo:", err);
     }
 }
 
-// Llamada segura
-connectDB().catch(err => console.error("❌ Error inesperado conectDB():", err));
-
+connectDB();
 
 // -----------------------------
 // GET /comments
 // -----------------------------
 app.get("/comments", async (req, res) => {
     try {
-        if (!db) {
-            console.log("⚠ MongoDB no conectado, devolviendo []");
-            return res.json([]);
-        }
+        if (!db) return res.json([]);
 
         const last = await db.collection("comments")
             .find({})
@@ -67,10 +63,9 @@ app.get("/comments", async (req, res) => {
         return res.json(last.length ? last[0].data : []);
     } catch (err) {
         console.error("❌ Error GET /comments:", err);
-        res.status(500).json({ error: "Error al leer comentarios." });
+        res.status(500).json({ error: "Error al leer comentarios" });
     }
 });
-
 
 // -----------------------------
 // POST /scrape
@@ -78,12 +73,11 @@ app.get("/comments", async (req, res) => {
 app.post("/scrape", async (req, res) => {
     const { apiToken, facebookUrl, limitComments } = req.body;
 
-    console.log("📩 POST /scrape recibido:", req.body);
-
     if (!apiToken || !facebookUrl)
         return res.status(400).json({ error: "Faltan parámetros." });
 
     try {
+        // Ejecutar tarea de Apify
         const run = await fetch(
             `https://api.apify.com/v2/actor-tasks/facebook-comments-run/run-sync?token=${apiToken}`,
             {
@@ -109,16 +103,15 @@ app.post("/scrape", async (req, res) => {
 
         const dataset = await datasetReq.json();
 
+        // Guardar en Mongo
         if (db) {
             await db.collection("comments").insertOne({
                 timestamp: new Date(),
                 data: dataset
             });
-            console.log("💾 Datos guardados en MongoDB.");
         }
 
         res.json({ ok: true, data: dataset });
-
     } catch (err) {
         console.error("❌ Error en /scrape:", err);
         res.status(500).json({ error: "Error ejecutando scrape." });
@@ -126,5 +119,19 @@ app.post("/scrape", async (req, res) => {
 });
 
 // -----------------------------
-console.log("🚀 A punto de iniciar servidor...");
-app.listen(3000, () => console.log("🔥 Servidor en puerto 3000 LISTO"));
+// SERVIR FRONTEND (index.html + app.js)
+// -----------------------------
+app.use(express.static(path.join(__dirname)));
+
+app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
+});
+
+// -----------------------------
+// START SERVER
+// -----------------------------
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log(`🔥 Servidor LISTO en puerto ${PORT}`);
+});
