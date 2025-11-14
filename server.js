@@ -2,20 +2,26 @@
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
+import path from "path";
 import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
-import path from "path";
 import { fileURLToPath } from "url";
 
 dotenv.config();
 
+// -----------------------------
+// Express setup
+// -----------------------------
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Obtener __dirname en ES modules
+// Necesario para servir index.html correctamente
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Servir frontend desde /public
+app.use(express.static(path.join(__dirname, "public")));
 
 // -----------------------------
 // MongoDB SETUP
@@ -24,24 +30,24 @@ const mongoUri = process.env.MONGO_URI;
 let db = null;
 
 async function connectDB() {
-    console.log("🔌 Conectando a MongoDB...");
+    console.log("🔌 Intentando conectar a MongoDB...");
+
+    if (!mongoUri) {
+        console.error("❌ ERROR: MONGO_URI no está definida.");
+        return;
+    }
 
     try {
-        if (!mongoUri) {
-            console.error("❌ ERROR: MONGO_URI no está definida!");
-            return;
-        }
-
         const client = new MongoClient(mongoUri, {
-            serverSelectionTimeoutMS: 5000
+            serverSelectionTimeoutMS: 15000
         });
 
         await client.connect();
-        db = client.db("fb_scraper");
 
-        console.log("✅ MongoDB conectado");
+        db = client.db("fb_scraper");
+        console.log("✅ MongoDB conectado correctamente");
     } catch (err) {
-        console.error("❌ Error conectando a Mongo:", err);
+        console.error("❌ Falló conexión MongoDB:", err);
     }
 }
 
@@ -63,7 +69,7 @@ app.get("/comments", async (req, res) => {
         return res.json(last.length ? last[0].data : []);
     } catch (err) {
         console.error("❌ Error GET /comments:", err);
-        res.status(500).json({ error: "Error al leer comentarios" });
+        res.status(500).json({ error: "Error al leer comentarios." });
     }
 });
 
@@ -72,12 +78,12 @@ app.get("/comments", async (req, res) => {
 // -----------------------------
 app.post("/scrape", async (req, res) => {
     const { apiToken, facebookUrl, limitComments } = req.body;
+    console.log("📩 POST /scrape recibido:", req.body);
 
     if (!apiToken || !facebookUrl)
         return res.status(400).json({ error: "Faltan parámetros." });
 
     try {
-        // Ejecutar tarea de Apify
         const run = await fetch(
             `https://api.apify.com/v2/actor-tasks/facebook-comments-run/run-sync?token=${apiToken}`,
             {
@@ -95,23 +101,22 @@ app.post("/scrape", async (req, res) => {
         if (!output?.data?.defaultDatasetId)
             return res.status(500).json({ error: "No se obtuvo datasetId." });
 
-        const datasetId = output.data.defaultDatasetId;
-
-        const datasetReq = await fetch(
-            `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apiToken}`
+        const datasetRes = await fetch(
+            `https://api.apify.com/v2/datasets/${output.data.defaultDatasetId}/items?token=${apiToken}`
         );
 
-        const dataset = await datasetReq.json();
+        const dataset = await datasetRes.json();
 
-        // Guardar en Mongo
         if (db) {
             await db.collection("comments").insertOne({
                 timestamp: new Date(),
                 data: dataset
             });
+            console.log("💾 Datos guardados en MongoDB.");
         }
 
         res.json({ ok: true, data: dataset });
+
     } catch (err) {
         console.error("❌ Error en /scrape:", err);
         res.status(500).json({ error: "Error ejecutando scrape." });
@@ -119,12 +124,10 @@ app.post("/scrape", async (req, res) => {
 });
 
 // -----------------------------
-// SERVIR FRONTEND (index.html + app.js)
+// SERVE INDEX
 // -----------------------------
-app.use(express.static(path.join(__dirname)));
-
-app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "index.html"));
+app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 // -----------------------------
@@ -133,5 +136,5 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log(`🔥 Servidor LISTO en puerto ${PORT}`);
+    console.log(`🔥 Servidor escuchando en puerto ${PORT}`);
 });
