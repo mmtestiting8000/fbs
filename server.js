@@ -14,13 +14,13 @@ app.use(express.json());
 // -------------------------
 // MongoDB
 // -------------------------
-const mongoUri = process.env.MONGODB_URI;
+const mongoUri = process.env.MONGO_URI; // ✅ CORREGIDO
 
 let db = null;
 
 async function connectDB() {
   if (!mongoUri) {
-    console.error("❌ ERROR: MONGODB_URI no está definida.");
+    console.error("❌ ERROR: MONGO_URI no está definida.");
     return;
   }
   try {
@@ -66,7 +66,6 @@ app.post("/scrape", async (req, res) => {
     return res.status(400).json({ error: "Faltan parámetros." });
 
   try {
-    // Ejecutar Apify Actor
     const run = await fetch(`https://api.apify.com/v2/actor-tasks/facebook-comments-run/run-sync?token=${apiToken}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -78,20 +77,18 @@ app.post("/scrape", async (req, res) => {
 
     const output = await run.json();
 
-    if (!output || !output.data || !output.data.defaultDatasetId) {
+    if (!output?.data?.defaultDatasetId) {
       return res.status(500).json({ error: "No se obtuvo datasetId." });
     }
 
     const datasetId = output.data.defaultDatasetId;
 
-    // Obtener dataset
     const datasetReq = await fetch(
       `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apiToken}`
     );
 
     const dataset = await datasetReq.json();
 
-    // Guardar como último registro
     await db.collection("comments").insertOne({
       timestamp: new Date(),
       data: dataset
@@ -106,5 +103,4 @@ app.post("/scrape", async (req, res) => {
   }
 });
 
-// -------------------------
 app.listen(3000, () => console.log("🚀 Servidor en puerto 3000"));
