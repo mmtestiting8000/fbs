@@ -12,7 +12,6 @@ document.getElementById("runBtn").addEventListener("click", async () => {
         return;
     }
 
-    // Convertimos URLs separadas por nueva línea
     const fbUrls = fbUrlsRaw.split("\n").map(u => u.trim()).filter(Boolean);
 
     console.log("Enviando petición /run");
@@ -49,8 +48,9 @@ document.getElementById("runBtn").addEventListener("click", async () => {
     }
 });
 
+
 // ---------------------------------------------
-//   GENERAR TABLA DE RESULTADOS
+//   GENERAR TABLA DE RESULTADOS CORRECTA
 // ---------------------------------------------
 function renderTable(data) {
     const tableContainer = document.getElementById("resultsTable");
@@ -69,18 +69,23 @@ function renderTable(data) {
         <th>Título del Post</th>
         <th>Comentario</th>
         <th>Likes</th>
-        <th>URL del Post</th>
+        <th>URL</th>
     `;
     table.appendChild(header);
 
     data.forEach(item => {
         const row = document.createElement("tr");
 
+        const postTitle = item.postTitle || "";
+        const text = item.text || "";
+        const likes = item.likesCount || "0";
+        const url = item.facebookUrl || "";
+
         row.innerHTML = `
-            <td>${sanitize(item.postTitle || "")}</td>
-            <td>${sanitize(item.text || "")}</td>
-            <td>${sanitize(item.likesCount || "0")}</td>
-            <td><a href="${item.facebookUrl}" target="_blank">Abrir</a></td>
+            <td>${sanitize(postTitle)}</td>
+            <td>${sanitize(text)}</td>
+            <td>${sanitize(likes)}</td>
+            <td><a href="${url}" target="_blank">Abrir</a></td>
         `;
 
         table.appendChild(row);
@@ -88,6 +93,7 @@ function renderTable(data) {
 
     tableContainer.appendChild(table);
 }
+
 
 // ---------------------------------------------
 //   LIMPIAR HTML INYECTADO
