@@ -1,67 +1,96 @@
-document.getElementById("scrapeForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
+const loginSection = document.getElementById("login-section");
+const scraperSection = document.getElementById("scraper-section");
+const loginMsg = document.getElementById("login-msg");
+const scrapeMsg = document.getElementById("scrape-msg");
+const resultsTableBody = document.querySelector("#results-table tbody");
 
-    const token = document.getElementById("token").value;
-    const facebookUrl = document.getElementById("facebookUrl").value;
-    const limit = document.getElementById("limit").value;
+// LOGIN
+document.getElementById("login-btn").addEventListener("click", async () => {
+  loginMsg.textContent = "";
+  const username = document.getElementById("username").value.trim();
+  const password = document.getElementById("password").value;
 
-    const statusBox = document.getElementById("status");
-    statusBox.innerText = "⏳ Ejecutando scraper...";
-    statusBox.style.color = "black";
+  const r = await fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  const j = await r.json();
 
-    try {
-        const response = await fetch("/api/run-scraper", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token, facebookUrl, limit })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            statusBox.innerText = "❌ Error: " + data.error;
-            statusBox.style.color = "red";
-            return;
-        }
-
-        statusBox.innerText = "✔ Datos obtenidos correctamente";
-        statusBox.style.color = "green";
-
-        renderTable(data.comments);
-
-        document.getElementById("downloadCsvBtn").classList.remove("hidden");
-
-    } catch (err) {
-        statusBox.innerText = "❌ Error al conectar con el servidor";
-        statusBox.style.color = "red";
-    }
+  if (j.ok) {
+    loginSection.style.display = "none";
+    scraperSection.style.display = "block";
+    loadLatest();
+  } else loginMsg.textContent = j.message;
 });
 
-function renderTable(comments) {
-    const tbody = document.querySelector("#commentsTable tbody");
-    tbody.innerHTML = "";
+// SCRAPE
+document.getElementById("scrape-btn").addEventListener("click", async () => {
+  scrapeMsg.textContent = "Procesando...";
+  const body = {
+    startUrls: [{ url: document.getElementById("facebookUrl").value.trim() }],
+    resultsLimit: Number(document.getElementById("resultsLimit").value) || 50,
+    includeNestedComments: document.getElementById("includeNestedComments").checked,
+    viewOption: document.getElementById("viewOption").value,
+    apifyToken: document.getElementById("apifyToken").value.trim(),
+  };
 
-    comments.forEach(c => {
-        const row = `
-            <tr>
-                <td>${c.postTitle}</td>
-                <td>${c.text}</td>
-                <td>${c.likesCount}</td>
-                <td><a href="${c.facebookUrl}" target="_blank">Ver</a></td>
-            </tr>
-        `;
-        tbody.innerHTML += row;
-    });
+  const resp = await fetch("/api/scrape", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const data = await resp.json();
+  if (!data.ok) {
+    scrapeMsg.textContent = "Error: " + (data.message || "");
+    return;
+  }
+
+  scrapeMsg.textContent = "Listo — " + data.normalized.length;
+  renderTable(data.normalized);
+});
+
+// LOAD LATEST
+async function loadLatest() {
+  const r = await fetch("/api/latest");
+  const j = await r.json();
+  if (j.ok) renderTable(j.normalized);
 }
 
-// Descargar CSV
-document.getElementById("downloadCsvBtn").addEventListener("click", async () => {
-    const response = await fetch("/api/export-csv");
-    const blob = await response.blob();
-
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "comments.csv";
-    a.click();
+// CSV
+document.getElementById("export-btn").addEventListener("click", () => {
+  window.location.href = "/api/export-csv";
 });
+
+// RENDER TABLE (UPDATED)
+function renderTable(items) {
+  resultsTableBody.innerHTML = "";
+
+  if (!items.length) {
+    resultsTableBody.innerHTML = `<tr><td colspan="6">Sin datos</td></tr>`;
+    return;
+  }
+
+  items.forEach((it) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(it.postTitle)}</td>
+      <td>${escapeHtml(it.text)}</td>
+      <td>${escapeHtml(it.likesCount)}</td>
+      <td>${escapeHtml(it.profileName)}</td>
+      <td>${escapeHtml(it.profileId)}</td>
+      <td>
+        ${it.profileUrl ? `<a href="${escapeAttr(it.profileUrl)}" target="_blank">Perfil</a>` : ""}
+      </td>
+    `;
+    resultsTableBody.appendChild(tr);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;");
+}
+function escapeAttr(s) {
+  return String(s).replace(/"/g, "%22");
+}
